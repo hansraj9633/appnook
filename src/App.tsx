@@ -471,7 +471,7 @@ function AppsPage() {
       result = [...result].sort((a, b) => a.name.localeCompare(b.name));
 
     return result;
-  }, [query, category, sort]);
+  }, [apps, query, category, sort]);
 
   return (
     <main className="mx-auto min-h-[60vh] max-w-7xl px-5 py-12 lg:px-8">
