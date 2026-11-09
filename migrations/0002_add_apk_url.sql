@@ -1,0 +1,2 @@
+
+ALTER TABLE apps ADD COLUMN apk_url TEXT;

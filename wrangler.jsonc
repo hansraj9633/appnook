@@ -1,0 +1,15 @@
+
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "appnook-api",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-11-08",
+  "workers_dev": true,
+  "d1_databases": [
+    {
+      "binding": "APPNOOK_DB",
+      "database_name": "appnook-db",
+      "database_id": "5189242b-2685-4109-9759-e5d922a4df7b"
+    }
+  ]
+}
