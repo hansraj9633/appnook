@@ -1,5 +1,4 @@
 /// <reference types="@cloudflare/workers-types" />
-
 interface Env {
   APPNOOK_DB: D1Database;
   APPNOOK_MEDIA: KVNamespace;

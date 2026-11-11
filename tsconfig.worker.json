@@ -1,0 +1,18 @@
+
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023"],
+    "types": ["@cloudflare/workers-types", "node"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "skipLibCheck": true,
+    "noEmit": true,
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": [
+    "worker-configuration.d.ts",
+    "src/worker.ts"
+  ]
+}
