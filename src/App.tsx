@@ -609,7 +609,10 @@ function AppDetails() {
               {app.category}
             </p>
           </div>
-          <a href={getDownloadUrl(app.slug)} className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700">
+          <a
+            href={getDownloadUrl(app.slug)}
+            className="inline-flex items-center justify-center rounded-xl bg-indigo-600 px-6 py-3 text-sm font-semibold text-white transition hover:bg-indigo-700"
+          >
             Download APK
           </a>
         </div>
@@ -650,6 +653,30 @@ function AppDetails() {
             ))}
           </ul>
         </section>
+        {app.screenshots.length > 0 && (
+          <section className="mt-9">
+            <h2 className="text-xl font-bold">App screenshots</h2>
+
+            <div className="mt-4 grid grid-cols-2 gap-4 sm:grid-cols-3">
+              {app.screenshots.map((screenshot, index) => (
+                <a
+                  key={`${screenshot}-${index}`}
+                  href={screenshot}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="overflow-hidden rounded-xl border border-zinc-200 bg-zinc-50"
+                >
+                  <img
+                    src={screenshot}
+                    alt={`${app.name} screenshot ${index + 1}`}
+                    loading="lazy"
+                    className="h-auto w-full object-cover transition hover:scale-[1.02]"
+                  />
+                </a>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </main>
   );
@@ -725,7 +752,9 @@ type ApiErrorResponse = {
   error?: string;
 };
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "https://appnook-api.appnook.workers.dev";
+const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://appnook-api.appnook.workers.dev";
 
 const emptyForm: AppForm = {
   name: "",
@@ -800,6 +829,7 @@ function AdminPanel() {
   const [error, setError] = useState("");
 
   const [form, setForm] = useState<AppForm>(emptyForm);
+  const [screenshotUploading, setScreenshotUploading] = useState(false);
 
   const [navigation] = useState<{ label: AdminSection; icon: ElementType }[]>([
     { label: "Dashboard", icon: LayoutDashboard },
@@ -814,7 +844,11 @@ function AdminPanel() {
   ): Promise<T> {
     const headers = new Headers(options.headers);
 
-    headers.set("Content-Type", "application/json");
+    if (options.body instanceof FormData) {
+      headers.delete("Content-Type");
+    } else {
+      headers.set("Content-Type", "application/json");
+    }
 
     if (token) {
       headers.set("Authorization", `Bearer ${token}`);
@@ -942,8 +976,53 @@ function AdminPanel() {
     setShowForm(true);
   }
 
-  async function saveApp(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function uploadScreenshots(files: FileList | null) {
+    if (!files || files.length === 0) return;
+
+    setError("");
+    setNotice("");
+    setScreenshotUploading(true);
+
+    try {
+      const uploadedUrls: string[] = [];
+
+      for (const file of Array.from(files)) {
+        const formData = new FormData();
+        formData.append("file", file);
+
+        const result = await apiRequest<{ success: boolean; url: string }>(
+          "/api/admin/media",
+          {
+            method: "POST",
+            body: formData,
+          },
+        );
+
+        uploadedUrls.push(result.url);
+      }
+
+      setForm((current) => ({
+        ...current,
+        screenshots: [
+          ...current.screenshots
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean),
+          ...uploadedUrls,
+        ].join(", "),
+      }));
+
+      setNotice(`${uploadedUrls.length} screenshot(s) uploaded successfully.`);
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Screenshot upload failed.",
+      );
+    } finally {
+      setScreenshotUploading(false);
+    }
+  }
+
+  async function saveApp() {
     setError("");
     setNotice("");
 
@@ -1521,6 +1600,7 @@ function AdminPanel() {
                             <td className="px-5 py-4">
                               <div className="flex justify-end gap-1">
                                 <button
+                                  type="button"
                                   onClick={() => openEditForm(app)}
                                   title="Edit app"
                                   className="rounded-lg p-2 text-zinc-500 hover:bg-indigo-50 hover:text-indigo-600"
@@ -1528,6 +1608,7 @@ function AdminPanel() {
                                   <Pencil size={16} />
                                 </button>
                                 <button
+                                  type="button"
                                   onClick={() => void deleteApp(app)}
                                   title="Delete app"
                                   className="rounded-lg p-2 text-zinc-500 hover:bg-red-50 hover:text-red-600"
@@ -1671,7 +1752,10 @@ function AdminPanel() {
               </button>
             </div>
 
-            <form onSubmit={saveApp} className="space-y-4">
+            <form
+              onSubmit={(event) => event.preventDefault()}
+              className="space-y-4"
+            >
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block sm:col-span-2">
                   <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
@@ -1795,20 +1879,60 @@ function AdminPanel() {
                   />
                 </label>
 
-                <label className="block sm:col-span-2">
-                  <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
-                    Screenshot image URLs (comma separated)
+                <div className="block sm:col-span-2">
+                  <span className="mb-2 block text-xs font-semibold text-zinc-600">
+                    Application screenshots
                   </span>
-                  <textarea
-                    rows={2}
-                    value={form.screenshots}
-                    onChange={(e) =>
-                      setForm({ ...form, screenshots: e.target.value })
-                    }
-                    className="w-full rounded-xl border border-zinc-200 px-3.5 py-3 text-sm outline-none"
-                    placeholder="https://example.com/screenshot1.png, https://example.com/screenshot2.png"
-                  />
-                </label>
+
+                  <div className="rounded-xl border border-dashed border-zinc-300 p-4">
+                    <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg bg-indigo-50 px-4 py-6 text-center transition hover:bg-indigo-100">
+                      <Plus size={24} className="text-indigo-600" />
+
+                      <span className="text-sm font-semibold text-indigo-700">
+                        {screenshotUploading
+                          ? "Uploading screenshots..."
+                          : "Choose screenshot images"}
+                      </span>
+
+                      <span className="text-xs text-zinc-500">
+                        PNG, JPG or WebP · Maximum 5 MB per image
+                      </span>
+
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        multiple
+                        disabled={screenshotUploading}
+                        className="hidden"
+                        onChange={(event) => {
+                          void uploadScreenshots(event.target.files);
+                          event.target.value = "";
+                        }}
+                      />
+                    </label>
+
+                    <p className="mt-3 text-xs text-zinc-500">
+                      Uploaded images will be added to your application when you
+                      save it.
+                    </p>
+
+                    <label className="mt-4 block">
+                      <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
+                        Screenshot image URLs (optional fallback)
+                      </span>
+
+                      <textarea
+                        rows={3}
+                        value={form.screenshots}
+                        onChange={(e) =>
+                          setForm({ ...form, screenshots: e.target.value })
+                        }
+                        className="w-full rounded-xl border border-zinc-200 px-3.5 py-3 text-sm outline-none"
+                        placeholder="https://example.com/screenshot1.png, https://example.com/screenshot2.png"
+                      />
+                    </label>
+                  </div>
+                </div>
 
                 <label className="flex items-center gap-2 rounded-xl border border-zinc-200 p-3 text-sm">
                   <input
@@ -1842,7 +1966,8 @@ function AdminPanel() {
                   Cancel
                 </button>
                 <button
-                  type="submit"
+                  type="button"
+                  onClick={() => void saveApp()}
                   className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700"
                 >
                   <Save size={16} />{" "}

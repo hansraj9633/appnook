@@ -2,6 +2,7 @@
 
 interface Env {
   APPNOOK_DB: D1Database;
+  APPNOOK_MEDIA: KVNamespace;
   ADMIN_PASSWORD: string;
   SESSION_SECRET: string;
   ALLOWED_ORIGIN?: string;
@@ -52,7 +53,7 @@ function isValidGitHubApkUrl(value: string): boolean {
 
 function cors(request: Request, env: Env): HeadersInit {
   const origin = request.headers.get("Origin") || "";
-  const allowed = ["http://localhost:5173", env.ALLOWED_ORIGIN].filter(
+  const allowed = ["http://localhost:5173","http://localhost:5174", env.ALLOWED_ORIGIN].filter(
     (value): value is string => Boolean(value),
   );
 
@@ -82,10 +83,7 @@ function response(
 const encoder = new TextEncoder();
 
 function base64UrlEncode(value: string): string {
-  return btoa(value)
-    .replace(/\+/g, "-")
-    .replace(/\//g, "_")
-    .replace(/=+$/, "");
+  return btoa(value).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 function base64UrlDecode(value: string): string {
@@ -136,9 +134,8 @@ async function authorized(request: Request, env: Env): Promise<boolean> {
 
     const [payload, signature] = parts;
     const key = await getSigningKey(env.SESSION_SECRET);
-    const signatureBytes = Uint8Array.from(
-      base64UrlDecode(signature),
-      (char) => char.charCodeAt(0),
+    const signatureBytes = Uint8Array.from(base64UrlDecode(signature), (char) =>
+      char.charCodeAt(0),
     );
 
     const valid = await crypto.subtle.verify(
@@ -211,6 +208,35 @@ export default {
 
     if (method === "OPTIONS") {
       return new Response(null, { headers: cors(request, env) });
+    }
+
+    // Public: serve uploaded application screenshots
+    const mediaMatch = path.match(/^\/media\/([a-f0-9-]+\.(?:png|jpg|webp))$/i);
+
+    if (mediaMatch && method === "GET") {
+      const key = mediaMatch[1];
+      const image = await env.APPNOOK_MEDIA.get(key, "arrayBuffer");
+
+      if (!image) {
+        return new Response("Image not found", { status: 404 });
+      }
+
+      const extension = key.split(".").pop()?.toLowerCase();
+
+      const contentType =
+        extension === "png"
+          ? "image/png"
+          : extension === "webp"
+            ? "image/webp"
+            : "image/jpeg";
+
+      return new Response(image, {
+        headers: {
+          "Content-Type": contentType,
+          "Cache-Control": "public, max-age=31536000, immutable",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
     }
 
     try {
@@ -347,6 +373,96 @@ export default {
           return response({ error: "Unauthorized" }, request, env, 401);
         }
 
+        // Admin: upload application screenshot
+        if (path === "/api/admin/media" && method === "POST") {
+          const formData = await request.formData();
+          const file = formData.get("file");
+
+          if (!(file instanceof File)) {
+            return response(
+              { error: "Please select an image." },
+              request,
+              env,
+              400,
+            );
+          }
+
+          if (file.size === 0 || file.size > 5 * 1024 * 1024) {
+            return response(
+              { error: "Image must be between 1 byte and 5 MB." },
+              request,
+              env,
+              400,
+            );
+          }
+
+          const extensions: Record<string, string> = {
+            "image/png": "png",
+            "image/jpeg": "jpg",
+            "image/webp": "webp",
+          };
+
+          const extension = extensions[file.type];
+
+          if (!extension) {
+            return response(
+              { error: "Only PNG, JPEG and WebP images are supported." },
+              request,
+              env,
+              400,
+            );
+          }
+
+          const bytes = await file.arrayBuffer();
+          const data = new Uint8Array(bytes);
+
+          const isPng =
+            extension === "png" &&
+            data.length >= 8 &&
+            data[0] === 0x89 &&
+            data[1] === 0x50 &&
+            data[2] === 0x4e &&
+            data[3] === 0x47;
+
+          const isJpeg =
+            extension === "jpg" &&
+            data.length >= 3 &&
+            data[0] === 0xff &&
+            data[1] === 0xd8 &&
+            data[2] === 0xff;
+
+          const isWebp =
+            extension === "webp" &&
+            data.length >= 12 &&
+            String.fromCharCode(...data.slice(0, 4)) === "RIFF" &&
+            String.fromCharCode(...data.slice(8, 12)) === "WEBP";
+
+          if (!isPng && !isJpeg && !isWebp) {
+            return response(
+              { error: "The selected file is not a valid supported image." },
+              request,
+              env,
+              400,
+            );
+          }
+
+          const key = `${crypto.randomUUID()}.${extension}`;
+
+          await env.APPNOOK_MEDIA.put(key, bytes, {
+            metadata: { contentType: file.type },
+          });
+
+          return response(
+            {
+              success: true,
+              url: `${url.origin}/media/${key}`,
+            },
+            request,
+            env,
+            201,
+          );
+        }
+
         // Admin: list all apps
         if (path === "/api/admin/apps" && method === "GET") {
           const result = await env.APPNOOK_DB.prepare(
@@ -366,7 +482,12 @@ export default {
           const body: unknown = await request.json();
 
           if (!isAppInput(body)) {
-            return response({ error: "Invalid request body" }, request, env, 400);
+            return response(
+              { error: "Invalid request body" },
+              request,
+              env,
+              400,
+            );
           }
 
           const input = body;
@@ -435,8 +556,12 @@ export default {
               input.size?.trim() || null,
               input.icon_key?.trim() || null,
               input.apk_url.trim(),
-              JSON.stringify(Array.isArray(input.screenshots) ? input.screenshots : []),
-              JSON.stringify(Array.isArray(input.features) ? input.features : []),
+              JSON.stringify(
+                Array.isArray(input.screenshots) ? input.screenshots : [],
+              ),
+              JSON.stringify(
+                Array.isArray(input.features) ? input.features : [],
+              ),
               input.release_notes?.trim() || null,
               input.android_version?.trim() || null,
               input.featured ? 1 : 0,
@@ -470,7 +595,12 @@ export default {
           const body: unknown = await request.json();
 
           if (!isAppInput(body)) {
-            return response({ error: "Invalid request body" }, request, env, 400);
+            return response(
+              { error: "Invalid request body" },
+              request,
+              env,
+              400,
+            );
           }
 
           const input = body;
@@ -540,8 +670,12 @@ export default {
               input.size?.trim() || null,
               input.icon_key?.trim() || null,
               input.apk_url.trim(),
-              JSON.stringify(Array.isArray(input.screenshots) ? input.screenshots : []),
-              JSON.stringify(Array.isArray(input.features) ? input.features : []),
+              JSON.stringify(
+                Array.isArray(input.screenshots) ? input.screenshots : [],
+              ),
+              JSON.stringify(
+                Array.isArray(input.features) ? input.features : [],
+              ),
               input.release_notes?.trim() || null,
               input.android_version?.trim() || null,
               input.featured ? 1 : 0,
@@ -561,7 +695,9 @@ export default {
         if (path === "/api/admin/categories" && method === "POST") {
           const body: unknown = await request.json();
           const name =
-            typeof body === "object" && body !== null && "name" in body &&
+            typeof body === "object" &&
+            body !== null &&
+            "name" in body &&
             typeof (body as { name?: unknown }).name === "string"
               ? (body as { name: string }).name.trim()
               : "";

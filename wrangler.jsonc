@@ -1,4 +1,3 @@
-
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "appnook-api",
@@ -10,6 +9,12 @@
       "binding": "APPNOOK_DB",
       "database_name": "appnook-db",
       "database_id": "5189242b-2685-4109-9759-e5d922a4df7b"
+    }
+  ],
+  "kv_namespaces": [
+    {
+      "binding": "APPNOOK_MEDIA",
+      "id": "fe3bd0f97a7147e6afb86f751fb4358b"
     }
   ]
 }

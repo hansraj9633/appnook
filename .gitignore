@@ -25,3 +25,11 @@ dist-ssr
 
 .dev.vars
 .dev.vars.*
+
+# Cloudflare Wrangler local development files
+.wrangler/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
