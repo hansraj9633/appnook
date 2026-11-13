@@ -135,7 +135,7 @@ function Header() {
               end={link.to === "/"}
               style={({ isActive }) => ({
                 color: isActive ? "#075cff" : "#263252",
-                fontWeight: isActive ? 700 : 500,
+                fontWeight: 500,
                 transition: "color 160ms ease",
               })}
               className="text-sm transition-colors hover:text-[#075cff]"
@@ -263,7 +263,7 @@ function AppCard({ app }: { app: AppItem }) {
     >
       <div className="flex items-start gap-3">
         <AppIcon app={app} />
-        <div className="min-w-0 flex-1 bg-[#f5f7fc]">
+        <div className="min-w-0 flex-1">
           <h3 className="truncate font-bold group-hover:text-indigo-600">
             {app.name}
           </h3>
@@ -1443,7 +1443,26 @@ function AdminPanel() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
+  const [settings, setSettings] = useState({
+    websiteName: "AppNook",
+    tagline: "Apps worth keeping.",
+    contactEmail: "",
+    phone: "",
+    replyTime: "Within 2 days",
+    showVisitorCount: true,
+    showDownloadCount: true,
+    useStartingVisitors: false,
+    startingVisitors: "0",
+    notifyFeedback: true,
+    notifyRequests: true,
+    notifySubmissions: true,
+    notificationEmail: "",
+  });
+  const [settingsNotice, setSettingsNotice] = useState("");
+
   const [form, setForm] = useState<AppForm>(emptyForm);
+  const [iconMode, setIconMode] = useState<"text" | "image">("text");
+  const [iconUploading, setIconUploading] = useState(false);
   const [screenshotUploading, setScreenshotUploading] = useState(false);
 
   const [navigation] = useState<{ label: AdminSection; icon: ElementType }[]>([
@@ -1567,6 +1586,7 @@ function AdminPanel() {
 
   function openAddForm() {
     setEditing(null);
+    setIconMode("text");
     setForm({
       ...emptyForm,
       category: adminCategories[0] || "Education",
@@ -1576,6 +1596,7 @@ function AdminPanel() {
 
   function openEditForm(app: AdminApp) {
     setEditing(app);
+    setIconMode(/^https?:\/\//i.test(app.icon) ? "image" : "text");
     setForm({
       name: app.name,
       description: app.description,
@@ -1635,6 +1656,39 @@ function AdminPanel() {
       );
     } finally {
       setScreenshotUploading(false);
+    }
+  }
+
+  async function uploadAppIcon(file: File | null) {
+    if (!file) return;
+
+    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
+      setError("Choose a PNG, JPG or WebP image for the app icon.");
+      return;
+    }
+
+    if (file.size > 5 * 1024 * 1024) {
+      setError("App icon image must be 5 MB or smaller.");
+      return;
+    }
+
+    setError("");
+    setNotice("");
+    setIconUploading(true);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      const result = await apiRequest<{ success: boolean; url: string }>(
+        "/api/admin/media",
+        { method: "POST", body: formData },
+      );
+      setForm((current) => ({ ...current, icon: result.url }));
+      setNotice("App icon uploaded successfully.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "App icon upload failed.");
+    } finally {
+      setIconUploading(false);
     }
   }
 
@@ -1769,6 +1823,30 @@ function AdminPanel() {
       await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add category.");
+    }
+  }
+
+  async function renameCategory(name: string) {
+    const nextName = window.prompt(`Rename category "${name}" to:`, name)?.trim();
+    if (!nextName || nextName === name) return;
+
+    setError("");
+    try {
+      const categoriesResponse = await fetch(`${API_BASE}/api/categories`);
+      const categoriesData = (await categoriesResponse.json()) as ApiCategory[];
+      const category = categoriesData.find((item) => item.name === name);
+
+      if (!category) throw new Error("Category not found.");
+
+      await apiRequest(`/api/admin/categories/${category.id}`, {
+        method: "PUT",
+        body: JSON.stringify({ name: nextName }),
+      });
+
+      setNotice("Category renamed successfully.");
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not rename category.");
     }
   }
 
@@ -2419,70 +2497,108 @@ function AdminPanel() {
             {section === "Categories" && (
               <>
                 <div className="mb-7">
-                  <p className="text-sm font-semibold text-indigo-600">
+                  <p className="text-[13px] font-semibold tracking-[0.08em] text-[#075cff]">
                     ORGANISATION
                   </p>
-                  <h1 className="mt-2 text-3xl font-extrabold">Categories</h1>
-                  <p className="mt-2 text-sm text-zinc-500">
+                  <h1 className="mt-2 text-[34px] font-bold leading-tight tracking-[-0.035em] text-[#101a3d]">
+                    Categories
+                  </h1>
+                  <p className="mt-2 text-[15px] text-[#536184]">
                     Organise applications into categories.
                   </p>
                 </div>
 
-                <form
-                  onSubmit={addCategory}
-                  className="mb-6 flex max-w-xl gap-2"
-                >
+                <form onSubmit={addCategory} className="mb-4 flex flex-col gap-3 sm:flex-row">
                   <input
                     required
                     value={categoryInput}
                     onChange={(event) => setCategoryInput(event.target.value)}
                     placeholder="New category name"
-                    className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-4 py-3 text-sm outline-none"
+                    aria-label="New category name"
+                    className="h-[52px] min-w-0 flex-1 rounded-2xl border border-[#dce4f2] bg-white px-4 text-sm text-[#101a3d] outline-none transition placeholder:text-[#858fa5] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
                   />
-                  <button className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-3 text-sm font-bold text-white">
-                    <Plus size={16} /> Add
+                  <button
+                    type="submit"
+                    className="inline-flex h-[52px] items-center justify-center gap-2 rounded-2xl bg-[#075cff] px-5 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100"
+                  >
+                    <Plus size={17} /> Add
                   </button>
                 </form>
 
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                  {adminCategories.map((category, index) => (
-                    <div
-                      key={category}
-                      className="flex items-center gap-3 rounded-2xl border border-zinc-200 bg-white p-4"
-                    >
-                      <span
-                        className={`flex h-11 w-11 items-center justify-center rounded-xl text-white ${
-                          [
-                            "bg-indigo-600",
-                            "bg-teal-600",
-                            "bg-orange-500",
-                            "bg-violet-600",
-                            "bg-pink-600",
-                            "bg-sky-600",
-                          ][index % 6]
-                        }`}
+                <p className="mb-6 px-0.5 text-xs text-[#687797]">
+                  Categories that still contain apps can’t be deleted. Move the apps first.
+                </p>
+
+                <div className="grid gap-4 md:grid-cols-2">
+                  {adminCategories.map((category, index) => {
+                    const categoryColors = [
+                      "bg-[#075cff]",
+                      "bg-[#0f9f91]",
+                      "bg-[#ff7417]",
+                      "bg-[#7c3aed]",
+                      "bg-[#e52275]",
+                      "bg-[#0284c7]",
+                    ];
+                    const appCount = adminApps.filter(
+                      (app) => app.category === category,
+                    ).length;
+
+                    return (
+                      <div
+                        key={category}
+                        className="flex min-w-0 items-center gap-3 rounded-[20px] border border-[#e1e8f4] bg-white p-4 transition hover:border-[#cbd8ee] sm:gap-4 sm:px-5 sm:py-[18px]"
                       >
-                        <Tags size={19} />
-                      </span>
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-sm font-bold">{category}</p>
-                        <p className="mt-1 text-xs text-zinc-400">
-                          {
-                            adminApps.filter((app) => app.category === category)
-                              .length
-                          }{" "}
-                          applications
-                        </p>
+                        <span
+                          className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-[15px] text-white ${
+                            categoryColors[index % categoryColors.length]
+                          }`}
+                        >
+                          <Tags size={21} />
+                        </span>
+
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[15px] font-semibold text-[#101a3d]">
+                            {category}
+                          </p>
+                          <p className="mt-1 text-xs text-[#687797]">
+                            {appCount} {appCount === 1 ? "application" : "applications"}
+                          </p>
+                        </div>
+
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void renameCategory(category)}
+                            title={`Edit ${category}`}
+                            aria-label={`Edit ${category}`}
+                            className="flex h-10 w-10 items-center justify-center rounded-full border border-[#dce4f2] text-[#536184] transition hover:border-[#b9c9e5] hover:bg-[#f0f5ff] hover:text-[#075cff]"
+                          >
+                            <Pencil size={16} />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void removeCategory(category)}
+                            title={`Delete ${category}`}
+                            aria-label={`Delete ${category}`}
+                            className="flex h-10 w-10 items-center justify-center rounded-full border border-[#ffd3cf] text-[#d92d20] transition hover:bg-[#fff6f5]"
+                          >
+                            <Trash2 size={16} />
+                          </button>
+                        </div>
                       </div>
-                      <button
-                        onClick={() => void removeCategory(category)}
-                        title={`Delete ${category}`}
-                        className="rounded-lg p-2 text-zinc-400 hover:bg-red-50 hover:text-red-600"
-                      >
-                        <Trash2 size={16} />
-                      </button>
+                    );
+                  })}
+                  {adminCategories.length === 0 && (
+                    <div className="rounded-[20px] border border-dashed border-[#dce4f2] bg-white px-6 py-14 text-center md:col-span-2">
+                      <Tags size={25} className="mx-auto text-[#9aa7bd]" />
+                      <p className="mt-3 text-sm font-semibold text-[#34415f]">
+                        No categories yet
+                      </p>
+                      <p className="mt-1 text-xs text-[#687797]">
+                        Add your first category above.
+                      </p>
                     </div>
-                  ))}
+                  )}
                 </div>
               </>
             )}
@@ -2490,21 +2606,76 @@ function AdminPanel() {
             {section === "Settings" && (
               <>
                 <div className="mb-7">
-                  <p className="text-sm font-semibold text-indigo-600">
-                    PREFERENCES
-                  </p>
-                  <h1 className="mt-2 text-3xl font-extrabold">Settings</h1>
+                  <p className="text-[13px] font-semibold tracking-[0.08em] text-[#075cff]">PREFERENCES</p>
+                  <h1 className="mt-2 text-[34px] font-bold leading-tight tracking-[-0.035em] text-[#101a3d]">Settings</h1>
+                  <p className="mt-2 text-[15px] text-[#536184]">Manage your AppNook website details and admin preferences.</p>
                 </div>
-                <div className="max-w-2xl rounded-2xl border border-zinc-200 bg-white p-5 sm:p-7">
-                  <h2 className="font-bold">Website information</h2>
-                  <p className="mt-3 text-sm leading-6 text-zinc-500">
-                    AppNook — Apps worth keeping.
-                  </p>
-                  <div className="mt-5 rounded-xl bg-indigo-50 p-4 text-sm leading-6 text-indigo-800">
-                    Your application listings and categories are now stored in
-                    Cloudflare D1. Website settings will be connected
-                    separately.
-                  </div>
+
+                {settingsNotice && <div role="status" className="mb-5 max-w-4xl rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">{settingsNotice}</div>}
+
+                <div className="max-w-4xl space-y-5">
+                  <section className="rounded-[20px] border border-[#e1e8f4] bg-white p-5 sm:p-6">
+                    <div className="mb-5 flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#edf3ff] text-[#075cff]"><Settings size={19}/></span>
+                      <div><h2 className="text-[15px] font-semibold text-[#101a3d]">Website information</h2><p className="mt-1 text-xs text-[#687797]">Basic identity displayed across AppNook.</p></div>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="block"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Website name</span><input value={settings.websiteName} onChange={e=>setSettings({...settings,websiteName:e.target.value})} className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>
+                      <label className="block"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Tagline</span><input value={settings.tagline} onChange={e=>setSettings({...settings,tagline:e.target.value})} className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>
+                    </div>
+                    <button type="button" onClick={()=>setSettingsNotice("Website information is configured in the UI preview. Permanent saving will be connected after the UI is complete.")} className="mt-4 rounded-full bg-[#075cff] px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-700">Save changes</button>
+                  </section>
+
+                  <section className="rounded-[20px] border border-[#e1e8f4] bg-white p-5 sm:p-6">
+                    <div className="mb-5 flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#eaf8f4] text-[#0f9f75]"><Mail size={19}/></span>
+                      <div><h2 className="text-[15px] font-semibold text-[#101a3d]">Contact information</h2><p className="mt-1 text-xs text-[#687797]">Details visitors see on the public Contact page.</p></div>
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="block"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Contact email</span><input type="email" value={settings.contactEmail} onChange={e=>setSettings({...settings,contactEmail:e.target.value})} placeholder="you@example.com" className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none placeholder:text-[#9aa5b8] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>
+                      <label className="block"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Phone number (optional)</span><input value={settings.phone} onChange={e=>setSettings({...settings,phone:e.target.value})} placeholder="Phone number" className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none placeholder:text-[#9aa5b8] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>
+                      <label className="block sm:col-span-2"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Typical reply time</span><input value={settings.replyTime} onChange={e=>setSettings({...settings,replyTime:e.target.value})} placeholder="e.g. Within 2 days" className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>
+                    </div>
+                    <button type="button" onClick={()=>setSettingsNotice("Contact details are configured in the UI preview. Public page connection will come later.")} className="mt-4 rounded-full bg-[#075cff] px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-700">Save changes</button>
+                  </section>
+
+                  <section className="rounded-[20px] border border-[#e1e8f4] bg-white p-5 sm:p-6">
+                    <div className="mb-5 flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#fff5e9] text-[#e87918]"><Eye size={19}/></span>
+                      <div><h2 className="text-[15px] font-semibold text-[#101a3d]">Homepage counters</h2><p className="mt-1 text-xs text-[#687797]">Choose which public statistics appear on the homepage.</p></div>
+                    </div>
+                    <div className="space-y-4">
+                      <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={settings.showVisitorCount} onChange={e=>setSettings({...settings,showVisitorCount:e.target.checked})} className="mt-0.5 h-4 w-4 accent-[#075cff]"/><span><b className="block text-sm text-[#263252]">Show visitor count</b><small className="text-xs text-[#687797]">Display the visitor statistic on the homepage.</small></span></label>
+                      <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={settings.showDownloadCount} onChange={e=>setSettings({...settings,showDownloadCount:e.target.checked})} className="mt-0.5 h-4 w-4 accent-[#075cff]"/><span><b className="block text-sm text-[#263252]">Show download count</b><small className="text-xs text-[#687797]">Display total app downloads on the homepage.</small></span></label>
+                      <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={settings.useStartingVisitors} onChange={e=>setSettings({...settings,useStartingVisitors:e.target.checked})} className="mt-0.5 h-4 w-4 accent-[#075cff]"/><span><b className="block text-sm text-[#263252]">Add a starting visitor number</b><small className="text-xs text-[#687797]">Carry over a verified visitor count from another platform.</small></span></label>
+                    </div>
+                    {settings.useStartingVisitors && <label className="mt-4 block max-w-sm"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Starting visitors</span><input type="number" min="0" value={settings.startingVisitors} onChange={e=>setSettings({...settings,startingVisitors:e.target.value})} className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>}
+                    <button type="button" onClick={()=>setSettingsNotice("Homepage counter preferences are configured in the UI preview. They will be applied after backend integration.")} className="mt-5 rounded-full bg-[#075cff] px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-700">Save changes</button>
+                  </section>
+
+                  <section className="rounded-[20px] border border-[#e1e8f4] bg-white p-5 sm:p-6">
+                    <div className="mb-5 flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#f3edff] text-[#7c3aed]"><Mail size={19}/></span>
+                      <div><h2 className="text-[15px] font-semibold text-[#101a3d]">Notification preferences</h2><p className="mt-1 text-xs text-[#687797]">Choose which new submissions you want notifications for.</p></div>
+                    </div>
+                    <div className="space-y-4">
+                      <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={settings.notifyFeedback} onChange={e=>setSettings({...settings,notifyFeedback:e.target.checked})} className="mt-0.5 h-4 w-4 accent-[#075cff]"/><span><b className="block text-sm text-[#263252]">Feedback & support messages</b><small className="text-xs text-[#687797]">Contact form messages, questions and problem reports.</small></span></label>
+                      <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={settings.notifyRequests} onChange={e=>setSettings({...settings,notifyRequests:e.target.checked})} className="mt-0.5 h-4 w-4 accent-[#075cff]"/><span><b className="block text-sm text-[#263252]">Apps on Demand</b><small className="text-xs text-[#687797]">New app requests from visitors.</small></span></label>
+                      <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={settings.notifySubmissions} onChange={e=>setSettings({...settings,notifySubmissions:e.target.checked})} className="mt-0.5 h-4 w-4 accent-[#075cff]"/><span><b className="block text-sm text-[#263252]">Developer submissions</b><small className="text-xs text-[#687797]">Android apps submitted for review.</small></span></label>
+                    </div>
+                    <label className="mt-5 block"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Send notifications to</span><input type="email" value={settings.notificationEmail} onChange={e=>setSettings({...settings,notificationEmail:e.target.value})} placeholder="admin@example.com" className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none placeholder:text-[#9aa5b8] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>
+                    <button type="button" onClick={()=>setSettingsNotice("Notification preferences are configured in the UI preview. Email notifications will be connected later.")} className="mt-4 rounded-full bg-[#075cff] px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-700">Save changes</button>
+                  </section>
+
+                  <section className="rounded-[20px] border border-[#e1e8f4] bg-white p-5 sm:p-6">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#fff1f0] text-[#d92d20]"><ShieldCheck size={19}/></span>
+                      <div><h2 className="text-[15px] font-semibold text-[#101a3d]">Security</h2><p className="mt-1 text-xs text-[#687797]">Admin access and account safety.</p></div>
+                    </div>
+                    <div className="mt-4 rounded-xl bg-[#f7f9fd] px-4 py-3 text-xs leading-5 text-[#687797]">Admin password changes are not included yet because they require a secure password-update endpoint. For now, use Logout when you finish managing AppNook.</div>
+                  </section>
+
+                  <p className="pb-2 text-xs leading-5 text-[#8793aa]">Settings are currently a UI preview. Values remain in this page only and are not saved permanently. We will connect storage and behaviour after completing the admin UI.</p>
                 </div>
               </>
             )}
@@ -2513,171 +2684,232 @@ function AdminPanel() {
       </div>
 
       {showForm && (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-zinc-950/50 p-0 sm:items-center sm:p-5">
-          <div className="max-h-[94vh] w-full max-w-2xl overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl sm:p-7">
-            <div className="mb-6 flex items-center justify-between">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#101a3d]/55 p-3 backdrop-blur-[2px] sm:p-6">
+          <div className="flex max-h-[calc(100vh-24px)] w-full max-w-[585px] flex-col overflow-hidden rounded-[22px] border border-[#e7ecf5] bg-white shadow-[0_24px_80px_rgba(16,26,61,0.22)] sm:max-h-[calc(100vh-48px)]">
+            <div className="flex items-start justify-between px-6 pb-4 pt-6 sm:px-8 sm:pt-7">
               <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-indigo-600">
-                  {editing ? "Update listing" : "New listing"}
+                <p className="text-[10px] font-bold uppercase tracking-[0.12em] text-[#075cff]">
+                  {editing ? "UPDATE LISTING" : "NEW LISTING"}
                 </p>
-                <h2 className="mt-1 text-2xl font-extrabold">
+                <h2 className="mt-1 text-[24px] font-bold leading-tight tracking-[-0.035em] text-[#101a3d]">
                   {editing ? "Edit application" : "Add application"}
                 </h2>
+                <p className="mt-1 text-[11px] text-[#687797]">
+                  Fields marked with * are required.
+                </p>
               </div>
               <button
+                type="button"
                 onClick={() => setShowForm(false)}
-                className="rounded-xl p-2 text-zinc-400 hover:bg-zinc-100"
+                aria-label="Close application form"
+                className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-[#e1e8f4] text-[#34415f] transition hover:bg-[#f5f7fc]"
               >
-                <X size={20} />
+                <X size={17} />
               </button>
             </div>
 
-            <form
-              onSubmit={(event) => event.preventDefault()}
-              className="space-y-4"
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <label className="block sm:col-span-2">
-                  <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
-                    App name *
+            <form onSubmit={(event) => event.preventDefault()} className="min-h-0 flex-1 overflow-y-auto px-6 pb-6 sm:px-8">
+              <div className="space-y-4">
+                <label className="block">
+                  <span className="mb-1.5 block text-[11px] font-medium text-[#34415f]">
+                    App name <span className="text-red-500">*</span>
                   </span>
                   <input
                     required
                     value={form.name}
                     onChange={(e) => setForm({ ...form, name: e.target.value })}
-                    className="w-full rounded-xl border border-zinc-200 px-3.5 py-3 text-sm outline-none focus:border-indigo-400"
+                    className="h-9 w-full rounded-[11px] border border-[#dce4f2] px-3 text-[11px] text-[#101a3d] outline-none transition placeholder:text-[#858fa5] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
                     placeholder="e.g. Smart Practice"
                   />
                 </label>
 
-                <label className="block sm:col-span-2">
-                  <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
-                    Description *
+                <label className="block">
+                  <span className="mb-1.5 block text-[11px] font-medium text-[#34415f]">
+                    Description <span className="text-red-500">*</span>
                   </span>
                   <textarea
                     required
-                    rows={3}
+                    maxLength={300}
+                    rows={4}
                     value={form.description}
-                    onChange={(e) =>
-                      setForm({ ...form, description: e.target.value })
-                    }
-                    className="w-full resize-y rounded-xl border border-zinc-200 px-3.5 py-3 text-sm outline-none focus:border-indigo-400"
+                    onChange={(e) => setForm({ ...form, description: e.target.value })}
+                    className="w-full resize-y rounded-[11px] border border-[#dce4f2] px-3 py-2.5 text-[11px] text-[#101a3d] outline-none transition placeholder:text-[#858fa5] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
                     placeholder="What does this app do?"
                   />
+                  <span className="mt-1 block text-right text-[10px] text-[#687797]">
+                    {form.description.length} / 300
+                  </span>
                 </label>
 
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
-                    Category *
-                  </span>
-                  <select
-                    required
-                    value={form.category}
-                    onChange={(e) =>
-                      setForm({ ...form, category: e.target.value })
-                    }
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3.5 py-3 text-sm outline-none"
-                  >
-                    {adminCategories.map((item) => (
-                      <option key={item} value={item}>
-                        {item}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="mb-1.5 block text-[11px] font-medium text-[#34415f]">
+                      Category <span className="text-red-500">*</span>
+                    </span>
+                    <select
+                      required
+                      value={form.category}
+                      onChange={(e) => setForm({ ...form, category: e.target.value })}
+                      className="h-9 w-full rounded-[11px] border border-[#dce4f2] bg-white px-3 text-[11px] text-[#172344] outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
+                    >
+                      {adminCategories.map((item) => (
+                        <option key={item} value={item}>{item}</option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="block">
+                    <span className="mb-1.5 block text-[11px] font-medium text-[#34415f]">
+                      Version <span className="text-red-500">*</span>
+                    </span>
+                    <input
+                      required
+                      value={form.version}
+                      onChange={(e) => setForm({ ...form, version: e.target.value })}
+                      className="h-9 w-full rounded-[11px] border border-[#dce4f2] px-3 text-[11px] text-[#101a3d] outline-none placeholder:text-[#858fa5] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
+                      placeholder="1.0.0"
+                    />
+                  </label>
+                </div>
 
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
-                    Version *
-                  </span>
-                  <input
-                    required
-                    value={form.version}
-                    onChange={(e) =>
-                      setForm({ ...form, version: e.target.value })
-                    }
-                    className="w-full rounded-xl border border-zinc-200 px-3.5 py-3 text-sm outline-none"
-                    placeholder="1.0.0"
-                  />
-                </label>
-
-                <label className="block">
-                  <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
-                    App size
-                  </span>
+                  <span className="mb-1.5 block text-[11px] font-medium text-[#34415f]">App size</span>
                   <input
                     value={form.size}
                     onChange={(e) => setForm({ ...form, size: e.target.value })}
-                    className="w-full rounded-xl border border-zinc-200 px-3.5 py-3 text-sm outline-none"
+                    className="h-9 w-full rounded-[11px] border border-[#dce4f2] px-3 text-[11px] text-[#101a3d] outline-none placeholder:text-[#858fa5] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
                     placeholder="18 MB"
                   />
+                  <span className="mt-1 block text-[10px] text-[#687797]">
+                    Leave empty and use “Fetch from link” to read the size from the APK.
+                  </span>
                 </label>
+
+                <div>
+                  <span className="mb-1.5 block text-[11px] font-medium text-[#34415f]">App icon</span>
+                  <div className="inline-flex rounded-xl bg-[#f0f4fb] p-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIconMode("text");
+                        if (/^https?:\/\//i.test(form.icon)) setForm({ ...form, icon: "" });
+                      }}
+                      className={`rounded-lg px-4 py-2 text-[10px] font-semibold transition ${iconMode === "text" ? "bg-white text-[#075cff] shadow-sm" : "text-[#536184] hover:text-[#101a3d]"}`}
+                    >
+                      Icon text
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIconMode("image")}
+                      className={`rounded-lg px-4 py-2 text-[10px] font-semibold transition ${iconMode === "image" ? "bg-white text-[#075cff] shadow-sm" : "text-[#536184] hover:text-[#101a3d]"}`}
+                    >
+                      Upload image
+                    </button>
+                  </div>
+
+                  {iconMode === "text" ? (
+                    <div className="mt-3 flex items-end gap-3">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[15px] bg-[#075cff] text-lg font-bold text-white">
+                        {(form.icon.trim() || form.name.trim().slice(0, 2) || "SP").slice(0, 2).toUpperCase()}
+                      </div>
+                      <label className="block w-[106px]">
+                        <span className="mb-1.5 block text-[10px] font-medium text-[#34415f]">1–2 letters</span>
+                        <input
+                          maxLength={2}
+                          value={form.icon}
+                          onChange={(e) => setForm({ ...form, icon: e.target.value.toUpperCase() })}
+                          className="h-9 w-full rounded-[11px] border border-[#dce4f2] px-3 text-[11px] outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
+                          placeholder="SP"
+                        />
+                      </label>
+                    </div>
+                  ) : (
+                    <div className="mt-3 flex items-center gap-3">
+                      <div className="flex h-14 w-14 shrink-0 items-center justify-center overflow-hidden rounded-[15px] border border-[#e1e8f4] bg-[#f8faff]">
+                        {/^https?:\/\//i.test(form.icon) ? (
+                          <img src={form.icon} alt="Application icon preview" className="h-full w-full object-cover" />
+                        ) : (
+                          <Smartphone size={22} className="text-[#9aa7bd]" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <label className="flex h-9 cursor-pointer items-center justify-center gap-2 rounded-[11px] border border-[#dce4f2] px-3 text-[11px] font-semibold text-[#075cff] transition hover:bg-[#f8faff]">
+                          <Plus size={14} />
+                          {iconUploading ? "Uploading image..." : "Choose image"}
+                          <input
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            disabled={iconUploading}
+                            className="hidden"
+                            onChange={(event) => {
+                              void uploadAppIcon(event.target.files?.[0] || null);
+                              event.target.value = "";
+                            }}
+                          />
+                        </label>
+                        <input
+                          type="url"
+                          value={form.icon}
+                          onChange={(e) => setForm({ ...form, icon: e.target.value })}
+                          className="mt-2 h-8 w-full rounded-[11px] border border-[#dce4f2] px-3 text-[10px] outline-none placeholder:text-[#858fa5] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
+                          placeholder="Or paste an image URL"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <span className="mb-1.5 block text-[11px] font-medium text-[#34415f]">
+                    GitHub Release APK URL <span className="text-red-500">*</span>
+                  </span>
+                  <div className="flex gap-2">
+                    <input
+                      required
+                      type="url"
+                      value={form.apkUrl}
+                      onChange={(e) => setForm({ ...form, apkUrl: e.target.value })}
+                      className="h-9 min-w-0 flex-1 rounded-[11px] border border-[#dce4f2] px-3 text-[11px] outline-none placeholder:text-[#858fa5] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
+                      placeholder="https://github.com/owner/repo/releases/download/v1.0/app.apk"
+                    />
+                    <button
+                      type="button"
+                      disabled={!form.apkUrl.trim()}
+                      onClick={() => {
+                        const valid = /^https:\/\/github\.com\/[^/]+\/[^/]+\/releases\/download\/.+\.apk(?:\?.*)?$/i.test(form.apkUrl.trim());
+                        setError(valid ? "" : "Enter a valid GitHub Releases APK download URL.");
+                        setNotice(valid ? "GitHub Release APK URL format looks valid." : "");
+                      }}
+                      className="h-9 shrink-0 rounded-full border border-[#dce4f2] px-4 text-[10px] font-semibold text-[#172344] transition hover:bg-[#f8faff] disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      Check link
+                    </button>
+                  </div>
+                  <span className="mt-1 block text-[10px] text-[#687797]">
+                    Upload the APK to a GitHub Release first, then paste its download URL.
+                  </span>
+                </div>
 
                 <label className="block">
-                  <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
-                    Icon text or image URL
-                  </span>
-                  <input
-                    value={form.icon}
-                    onChange={(e) => setForm({ ...form, icon: e.target.value })}
-                    className="w-full rounded-xl border border-zinc-200 px-3.5 py-3 text-sm outline-none"
-                    placeholder="SP or public image URL"
-                  />
-                </label>
-
-                <label className="block sm:col-span-2">
-                  <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
-                    GitHub Release APK URL *
-                  </span>
-                  <input
-                    required
-                    type="url"
-                    value={form.apkUrl}
-                    onChange={(e) =>
-                      setForm({ ...form, apkUrl: e.target.value })
-                    }
-                    className="w-full rounded-xl border border-zinc-200 px-3.5 py-3 text-sm outline-none"
-                    placeholder="https://github.com/owner/repo/releases/download/v1.0/app.apk"
-                  />
-                  <span className="mt-1 block text-xs text-zinc-400">
-                    Upload the APK to a GitHub Release first, then paste its
-                    download URL.
-                  </span>
-                </label>
-
-                <label className="block sm:col-span-2">
-                  <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
-                    Features (comma separated)
-                  </span>
+                  <span className="mb-1.5 block text-[11px] font-medium text-[#34415f]">Features (comma separated)</span>
                   <input
                     value={form.features}
-                    onChange={(e) =>
-                      setForm({ ...form, features: e.target.value })
-                    }
-                    className="w-full rounded-xl border border-zinc-200 px-3.5 py-3 text-sm outline-none"
+                    onChange={(e) => setForm({ ...form, features: e.target.value })}
+                    className="h-9 w-full rounded-[11px] border border-[#dce4f2] px-3 text-[11px] outline-none placeholder:text-[#858fa5] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
                     placeholder="Offline support, Easy to use, Fast"
                   />
+                  <span className="mt-1 block text-[10px] text-[#687797]">Each feature appears as a small tag on the app page.</span>
                 </label>
 
-                <div className="block sm:col-span-2">
-                  <span className="mb-2 block text-xs font-semibold text-zinc-600">
-                    Application screenshots
-                  </span>
-
-                  <div className="rounded-xl border border-dashed border-zinc-300 p-4">
-                    <label className="flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg bg-indigo-50 px-4 py-6 text-center transition hover:bg-indigo-100">
-                      <Plus size={24} className="text-indigo-600" />
-
-                      <span className="text-sm font-semibold text-indigo-700">
-                        {screenshotUploading
-                          ? "Uploading screenshots..."
-                          : "Choose screenshot images"}
+                <div>
+                  <span className="mb-1.5 block text-[11px] font-medium text-[#34415f]">Application screenshots</span>
+                  <div className="rounded-[14px] border border-dashed border-[#cbd8ee] p-3.5">
+                    <label className="flex cursor-pointer flex-col items-center justify-center gap-1.5 rounded-[12px] border border-dashed border-[#cbd8ee] bg-[#f5f8ff] px-4 py-5 text-center transition hover:bg-[#edf3ff]">
+                      <Plus size={18} className="text-[#075cff]" />
+                      <span className="text-[11px] font-semibold text-[#075cff]">
+                        {screenshotUploading ? "Uploading screenshots..." : "Choose screenshot images"}
                       </span>
-
-                      <span className="text-xs text-zinc-500">
-                        PNG, JPG or WebP · Maximum 5 MB per image
-                      </span>
-
+                      <span className="text-[10px] text-[#687797]">PNG, JPG or WebP · Maximum 5 MB per image</span>
                       <input
                         type="file"
                         accept="image/png,image/jpeg,image/webp"
@@ -2690,69 +2922,63 @@ function AdminPanel() {
                         }}
                       />
                     </label>
-
-                    <p className="mt-3 text-xs text-zinc-500">
-                      Uploaded images will be added to your application when you
-                      save it.
-                    </p>
-
-                    <label className="mt-4 block">
-                      <span className="mb-1.5 block text-xs font-semibold text-zinc-600">
-                        Screenshot image URLs (optional fallback)
-                      </span>
-
+                    {form.screenshots.trim() && (
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {form.screenshots.split(",").map((url) => url.trim()).filter(Boolean).map((url, index) => (
+                          <div key={`${url}-${index}`} className="h-[74px] w-[54px] overflow-hidden rounded-lg border border-[#e1e8f4] bg-[#f0f4fb]">
+                            <img src={url} alt={`Screenshot ${index + 1}`} className="h-full w-full object-cover" />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <p className="mt-2 text-[10px] text-[#687797]">Uploaded images are added when you save the application.</p>
+                    <label className="mt-3 block">
+                      <span className="mb-1.5 block text-[10px] font-medium text-[#34415f]">Screenshot image URLs (optional fallback)</span>
                       <textarea
                         rows={3}
                         value={form.screenshots}
-                        onChange={(e) =>
-                          setForm({ ...form, screenshots: e.target.value })
-                        }
-                        className="w-full rounded-xl border border-zinc-200 px-3.5 py-3 text-sm outline-none"
+                        onChange={(e) => setForm({ ...form, screenshots: e.target.value })}
+                        className="w-full rounded-[11px] border border-[#dce4f2] px-3 py-2.5 text-[11px] outline-none placeholder:text-[#858fa5] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
                         placeholder="https://example.com/screenshot1.png, https://example.com/screenshot2.png"
                       />
                     </label>
                   </div>
                 </div>
 
-                <label className="flex items-center gap-2 rounded-xl border border-zinc-200 p-3 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.featured}
-                    onChange={(e) =>
-                      setForm({ ...form, featured: e.target.checked })
-                    }
-                  />
-                  Featured application
-                </label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <label className="flex cursor-pointer items-start gap-2.5 rounded-[12px] border border-[#e1e8f4] p-3">
+                    <input type="checkbox" checked={form.featured} onChange={(e) => setForm({ ...form, featured: e.target.checked })} className="mt-0.5 accent-[#075cff]" />
+                    <span>
+                      <span className="block text-[11px] font-semibold text-[#101a3d]">Featured application</span>
+                      <span className="mt-0.5 block text-[10px] text-[#687797]">Show on the home page</span>
+                    </span>
+                  </label>
+                  <label className="flex cursor-pointer items-start gap-2.5 rounded-[12px] border border-[#e1e8f4] p-3">
+                    <input type="checkbox" checked={form.published} onChange={(e) => setForm({ ...form, published: e.target.checked })} className="mt-0.5 accent-[#075cff]" />
+                    <span>
+                      <span className="block text-[11px] font-semibold text-[#101a3d]">Publish immediately</span>
+                      <span className="mt-0.5 block text-[10px] text-[#687797]">Otherwise saved as a draft</span>
+                    </span>
+                  </label>
+                </div>
 
-                <label className="flex items-center gap-2 rounded-xl border border-zinc-200 p-3 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={form.published}
-                    onChange={(e) =>
-                      setForm({ ...form, published: e.target.checked })
-                    }
-                  />
-                  Publish immediately
-                </label>
-              </div>
-
-              <div className="flex flex-col-reverse gap-2 border-t border-zinc-100 pt-5 sm:flex-row sm:justify-end">
-                <button
-                  type="button"
-                  onClick={() => setShowForm(false)}
-                  className="rounded-xl border border-zinc-200 px-5 py-3 text-sm font-semibold text-zinc-600"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void saveApp()}
-                  className="inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3 text-sm font-bold text-white hover:bg-indigo-700"
-                >
-                  <Save size={16} />{" "}
-                  {editing ? "Save changes" : "Add application"}
-                </button>
+                <div className="flex flex-col-reverse gap-2 border-t border-[#edf1f7] pt-4 sm:flex-row sm:justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setShowForm(false)}
+                    className="rounded-full border border-[#dce4f2] px-5 py-2.5 text-[11px] font-semibold text-[#34415f] transition hover:bg-[#f8faff]"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void saveApp()}
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-[#075cff] px-5 py-2.5 text-[11px] font-semibold text-white transition hover:bg-blue-700"
+                  >
+                    <Save size={14} />
+                    {editing ? "Save changes" : "Add application"}
+                  </button>
+                </div>
               </div>
             </form>
           </div>
