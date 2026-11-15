@@ -1,6 +1,7 @@
 
-const API_BASE =
-  import.meta.env.VITE_API_BASE_URL || "https://appnook-api.appnook.workers.dev";
+export const API_BASE =
+  import.meta.env.VITE_API_BASE_URL ||
+  "https://appnook-api.appnook.workers.dev";
 
 export interface PublicApp {
   id: string;
@@ -23,6 +24,26 @@ export interface PublicCategory {
   id: number;
   name: string;
   slug: string;
+}
+
+export type MessageType =
+  | "feedback_support"
+  | "app_request"
+  | "developer_submission";
+
+export interface MessageSubmission {
+  type: MessageType;
+  sender_name: string;
+  sender_email: string;
+  subject?: string;
+  message?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface MessageSubmissionResponse {
+  success: boolean;
+  message: string;
+  id: number;
 }
 
 function parseArray(value: unknown): string[] {
@@ -87,6 +108,26 @@ export async function fetchPublicApp(slug: string): Promise<PublicApp> {
   }
 
   return mapPublicApp(await response.json());
+}
+
+export async function submitMessage(
+  payload: MessageSubmission,
+): Promise<MessageSubmissionResponse> {
+  const response = await fetch(`${API_BASE}/api/messages`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.error || "Unable to submit your message.");
+  }
+
+  return data as MessageSubmissionResponse;
 }
 
 export function getDownloadUrl(slug: string): string {

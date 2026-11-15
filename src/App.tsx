@@ -20,6 +20,7 @@ import {
   Zap,
   ShieldCheck,
   ArrowUpRight,
+  RefreshCw,
   SlidersHorizontal,
   LayoutDashboard,
   Package,
@@ -63,7 +64,9 @@ import {
   fetchPublicApps,
   fetchPublicCategories,
   getDownloadUrl,
+  submitMessage,
   type PublicApp,
+  type MessageType,
 } from "./data/api";
 
 type PublicDataContextType = {
@@ -99,12 +102,22 @@ function AppIcon({
     "5": "bg-violet-600",
   };
 
+  const isImageIcon = /^https?:\/\//i.test(app.icon);
+
   return (
     <div
       className={`${size === "large" ? "h-20 w-20 rounded-2xl text-2xl" : "h-14 w-14 rounded-xl text-lg"}
       ${colors[app.id] || "bg-zinc-700"} flex shrink-0 items-center justify-center font-bold text-white shadow-sm`}
     >
-      {app.icon}
+      {isImageIcon ? (
+        <img
+          src={app.icon}
+          alt={`${app.name} app icon`}
+          className="h-full w-full object-cover"
+        />
+      ) : (
+        app.icon
+    )}
     </div>
   );
 }
@@ -291,6 +304,39 @@ function Home() {
   const featured = featuredApps.length ? featuredApps : [...apps].sort((a, b) => b.downloads - a.downloads);
   const popular = [...apps].sort((a, b) => b.downloads - a.downloads);
   const [query, setQuery] = useState("");
+  const [homepageSettings, setHomepageSettings] = useState({
+    showVisitorCount: true,
+    showDownloadCount: true,
+    useStartingVisitors: false,
+    startingVisitors: "0",
+  });
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_BASE}/api/public/settings`)
+      .then(async (result) => {
+        if (!result.ok) throw new Error("Unable to load homepage settings");
+        return result.json();
+      })
+      .then((data: {
+        showVisitorCount?: boolean;
+        showDownloadCount?: boolean;
+        useStartingVisitors?: boolean;
+        startingVisitors?: string | number;
+      }) => {
+        if (!active) return;
+        setHomepageSettings({
+          showVisitorCount: data.showVisitorCount !== false,
+          showDownloadCount: data.showDownloadCount !== false,
+          useStartingVisitors: data.useStartingVisitors === true,
+          startingVisitors: String(data.startingVisitors ?? "0"),
+        });
+      })
+      .catch(() => {
+        // Keep default counter visibility if public settings are temporarily unavailable.
+      });
+    return () => { active = false; };
+  }, []);
 
   if (loading) return <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-24 text-center text-sm text-slate-500">Loading applications...</main>;
   if (error) return <main className="mx-auto w-full max-w-5xl flex-1 px-5 py-24 text-center text-sm text-red-600">{error}</main>;
@@ -365,14 +411,18 @@ function Home() {
               </div>)}
             </div>
           </section>
-          <section className="mx-auto grid max-w-[760px] grid-cols-1 items-center justify-items-center gap-7 rounded-2xl bg-[#0d173b] px-7 py-7 text-white sm:grid-cols-3 sm:gap-5">
-            <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600"><Eye size={19} /></span>
-              <div><p className="text-2xl font-bold leading-none">—</p><p className="mt-1 text-[10px] text-slate-300">Total visitors</p></div></div>
-            <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600"><Download size={19} /></span>
-              <div><p className="text-2xl font-bold leading-none">{apps.reduce((total, app) => total + (Number(app.downloads) || 0), 0).toLocaleString()}</p><p className="mt-1 text-[10px] text-slate-300">Apps downloaded</p></div></div>
-            <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600"><Smartphone size={19} /></span>
-              <div><p className="text-2xl font-bold leading-none">{apps.length.toLocaleString()}</p><p className="mt-1 text-[10px] text-slate-300">Available apps</p></div></div>
-          </section>
+          <section className={`mx-auto grid max-w-[760px] grid-cols-1 items-center justify-items-center gap-7 rounded-2xl bg-[#0d173b] px-7 py-7 text-white sm:gap-5 ${homepageSettings.showVisitorCount && homepageSettings.showDownloadCount ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+              {homepageSettings.showVisitorCount && (
+                <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600"><Eye size={19} /></span>
+                  <div><p className="text-2xl font-bold leading-none">{homepageSettings.useStartingVisitors ? (Number(homepageSettings.startingVisitors) || 0).toLocaleString() : "—"}</p><p className="mt-1 text-[10px] text-slate-300">Total visitors</p></div></div>
+              )}
+              {homepageSettings.showDownloadCount && (
+                <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600"><Download size={19} /></span>
+                  <div><p className="text-2xl font-bold leading-none">{apps.reduce((total, app) => total + (Number(app.downloads) || 0), 0).toLocaleString()}</p><p className="mt-1 text-[10px] text-slate-300">Apps downloaded</p></div></div>
+              )}
+              <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600"><Smartphone size={19} /></span>
+                <div><p className="text-2xl font-bold leading-none">{apps.length.toLocaleString()}</p><p className="mt-1 text-[10px] text-slate-300">Available apps</p></div></div>
+            </section>
         </div>
       </div>
     </div>
@@ -1072,16 +1122,102 @@ function SimplePage({
 
 function ContactPage() {
   const { categories } = usePublicData();
+  const [contactSettings, setContactSettings] = useState({
+    contactEmail: "",
+    phone: "",
+    replyTime: "We aim to reply as soon as possible",
+  });
   const [messageStatus, setMessageStatus] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    fetch(`${API_BASE}/api/public/settings`)
+      .then(async (result) => {
+        if (!result.ok) throw new Error("Unable to load contact settings");
+        return result.json();
+      })
+      .then((data: { contactEmail?: string; phone?: string; replyTime?: string }) => {
+        if (!active) return;
+        setContactSettings({
+          contactEmail: data.contactEmail?.trim() || "",
+          phone: data.phone?.trim() || "",
+          replyTime: data.replyTime?.trim() || "We aim to reply as soon as possible",
+        });
+      })
+      .catch(() => {
+        // Keep the safe fallback text if public settings cannot be loaded.
+      });
+    return () => { active = false; };
+  }, []);
   const [requestStatus, setRequestStatus] = useState("");
   const [developerStatus, setDeveloperStatus] = useState("");
 
-  const handlePreviewSubmit = (
+  const handleMessageSubmit = async (
     event: FormEvent<HTMLFormElement>,
     setStatus: (message: string) => void,
+    type: MessageType,
   ) => {
     event.preventDefault();
-    setStatus("This form is a design preview and is not connected to a submission service yet.");
+    setStatus("Submitting...");
+
+    const form = event.currentTarget;
+    const formData = new FormData(form);
+    const value = (key: string) =>
+      String(formData.get(key) ?? "").trim();
+
+    const senderName =
+      value("senderName") || value("developerName");
+    const senderEmail =
+      value("email") || value("developerEmail");
+    
+    let subject = "";
+    let message = "";
+    let details: Record<string, unknown> = {};
+
+    if (type === "feedback_support") {
+      subject = value("topic");
+      message = value("message");
+      details = {
+        phone: value("phone"),
+      };
+    } else if (type === "app_request") {
+      subject = value("appName");
+      message = value("description");
+      details = {
+        appName: value("appName"),
+        category: value("category"),
+        reference: value("reference"),
+      };
+    } else {
+       subject = value("appName");
+      message = value("description");
+      details = {
+        appName: value("appName"),
+        category: value("category"),
+        downloadLink: value("downloadLink"),
+        website: value("website"),
+      };
+    }
+  
+    try {
+      await submitMessage({
+        type,
+        sender_name: senderName,
+        sender_email: senderEmail,
+        subject,
+        message,
+        details,
+      });
+
+      setStatus("Submitted successfully! Thank you for contacting AppNook.");
+      form.reset();
+    } catch (error) {
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "Unable to submit your message. Please try again.",
+      );
+    }
   };
 
   return (
@@ -1100,7 +1236,12 @@ function ContactPage() {
         <div className="mt-9 grid items-start gap-5 lg:grid-cols-[1.65fr_0.95fr]">
           <section className="rounded-2xl border border-[#e5eaf3] bg-white p-5 sm:p-7">
             <h2 className="text-lg font-bold text-[#172344]">Send a message</h2>
-            <form className="mt-5 space-y-4" onSubmit={(event) => handlePreviewSubmit(event, setMessageStatus)}>
+            <form
+              className="mt-5 space-y-4"
+              onSubmit={(event) =>
+                handleMessageSubmit(event, setMessageStatus, "feedback_support")
+              }
+            >
               <div>
                 <label htmlFor="contact-topic" className="mb-1.5 block text-xs font-semibold text-[#53617f]">What is this about?</label>
                 <select id="contact-topic" name="topic" className="min-h-11 w-full rounded-xl border border-[#dfe6f1] bg-white px-3 text-sm text-[#263252] outline-none transition focus:border-[#075cff] focus:ring-2 focus:ring-blue-100">
@@ -1113,7 +1254,20 @@ function ContactPage() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 <div>
-                  <label htmlFor="contact-email" className="mb-1.5 block text-xs font-semibold text-[#53617f]">Email address</label>
+                  <div>
+                <label htmlFor="contact-name" className="mb-1.5 block text-xs font-semibold text-[#53617f]">
+                  Your name
+                </label>
+                <input
+                  id="contact-name"
+                  name="senderName"
+                  required
+                  maxLength={100}
+                  placeholder="Your name"
+                  className="min-h-11 w-full rounded-xl border border-[#dfe6f1] px-3 text-sm outline-none transition placeholder:text-[#9aa4b8] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
+                />
+              </div>
+              <label htmlFor="contact-email" className="mb-1.5 block text-xs font-semibold text-[#53617f]">Email address</label>
                   <input id="contact-email" name="email" type="email" required placeholder="you@example.com" className="min-h-11 w-full rounded-xl border border-[#dfe6f1] px-3 text-sm outline-none transition placeholder:text-[#9aa4b8] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/>
                 </div>
                 <div>
@@ -1142,15 +1296,15 @@ function ContactPage() {
               <div className="mt-5 space-y-4">
                 <div className="flex gap-3">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#edf4ff] text-[#075cff]"><Mail size={17}/></span>
-                  <div><p className="text-xs text-[#8791aa]">Email</p><p className="mt-0.5 text-sm font-semibold text-[#172344]">Contact email to be added</p></div>
+                  <div><p className="text-xs text-[#8791aa]">Email</p><p className="mt-0.5 text-sm font-semibold text-[#172344]">{contactSettings.contactEmail || "Contact email not available"}</p></div>
                 </div>
                 <div className="flex gap-3">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#edf4ff] text-[#075cff]"><Phone size={17}/></span>
-                  <div><p className="text-xs text-[#8791aa]">Phone</p><p className="mt-0.5 text-sm font-semibold text-[#172344]">Not available</p></div>
+                  <div><p className="text-xs text-[#8791aa]">Phone</p><p className="mt-0.5 text-sm font-semibold text-[#172344]">{contactSettings.phone || "Not available"}</p></div>
                 </div>
                 <div className="flex gap-3">
                   <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-[#edf4ff] text-[#075cff]"><Clock size={17}/></span>
-                  <div><p className="text-xs text-[#8791aa]">Typical reply time</p><p className="mt-0.5 text-sm font-semibold text-[#172344]">We aim to reply as soon as possible</p></div>
+                  <div><p className="text-xs text-[#8791aa]">Typical reply time</p><p className="mt-0.5 text-sm font-semibold text-[#172344]">{contactSettings.replyTime}</p></div>
                 </div>
               </div>
             </section>
@@ -1182,9 +1336,27 @@ function ContactPage() {
 
           <div className="mt-8 grid items-start gap-5 lg:grid-cols-[1.2fr_0.8fr]">
             <section className="rounded-2xl border border-[#e5eaf3] bg-white p-5 sm:p-7">
-              <form className="space-y-4" onSubmit={(event) => handlePreviewSubmit(event, setRequestStatus)}>
+              <form
+                className="space-y-4"
+                onSubmit={(event) =>
+                  handleMessageSubmit(event, setRequestStatus, "app_request")
+                }
+              >
                 <div>
-                  <label htmlFor="request-name" className="mb-1.5 block text-xs font-semibold text-[#53617f]">App name or idea</label>
+                  <div>
+                  <label htmlFor="request-sender-name" className="mb-1.5 block text-xs font-semibold text-[#53617f]">
+                    Your name
+                  </label>
+                  <input
+                    id="request-sender-name"
+                    name="senderName"
+                    required
+                    maxLength={100}
+                    placeholder="Your name"
+                    className="min-h-11 w-full rounded-xl border border-[#dfe6f1] px-3 text-sm outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
+                  />
+                </div>
+                <label htmlFor="request-name" className="mb-1.5 block text-xs font-semibold text-[#53617f]">App name or idea</label>
                   <input id="request-name" name="appName" required className="min-h-11 w-full rounded-xl border border-[#dfe6f1] px-3 text-sm outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/>
                 </div>
                 <div>
@@ -1242,7 +1414,12 @@ function ContactPage() {
           <div className="mt-8 grid items-start gap-5 lg:grid-cols-[1.2fr_0.8fr]">
             <section className="rounded-2xl border border-[#e5eaf3] bg-[#fbfcff] p-5 sm:p-7">
               <h3 className="text-lg font-bold text-[#172344]">Submit your application</h3>
-              <form className="mt-5 space-y-4" onSubmit={(event) => handlePreviewSubmit(event, setDeveloperStatus)}>
+              <form
+                className="mt-5 space-y-4"
+                onSubmit={(event) =>
+                  handleMessageSubmit(event, setDeveloperStatus, "developer_submission")
+                }
+              >
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div>
                     <label htmlFor="developer-name" className="mb-1.5 block text-xs font-semibold text-[#53617f]">Developer name</label>
@@ -1364,6 +1541,20 @@ type ApiErrorResponse = {
   error?: string;
 };
 
+type AdminMessage = {
+  id: number;
+  type: "feedback_support" | "app_request" | "developer_submission";
+  sender_name: string;
+  sender_email: string;
+  subject?: string | null;
+  message?: string | null;
+  details?: Record<string, unknown> | string | null;
+  status: "new" | "in_progress" | "resolved";
+  is_read: number | boolean;
+  admin_notes?: string | null;
+  created_at: string;
+};
+
 const API_BASE =
   import.meta.env.VITE_API_BASE_URL ||
   "https://appnook-api.appnook.workers.dev";
@@ -1432,6 +1623,16 @@ function AdminPanel() {
 
   const [adminApps, setAdminApps] = useState<AdminApp[]>([]);
   const [adminCategories, setAdminCategories] = useState<string[]>([]);
+  const [messages, setMessages] = useState<AdminMessage[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messageFilter, setMessageFilter] = useState("all");
+  const [messageStatusFilter, setMessageStatusFilter] = useState("all");
+  const [messageSearch, setMessageSearch] = useState("");
+  const [selectedMessage, setSelectedMessage] = useState<AdminMessage | null>(null);
+  const [messageNotes, setMessageNotes] = useState("");
+  const [messageActionLoading, setMessageActionLoading] = useState(false);
+  const [messageNotice, setMessageNotice] = useState("");
+  const [messageError, setMessageError] = useState("");
 
   const [section, setSection] = useState<AdminSection>("Dashboard");
   const [search, setSearch] = useState("");
@@ -1443,7 +1644,7 @@ function AdminPanel() {
   const [notice, setNotice] = useState("");
   const [error, setError] = useState("");
 
-  const [settings, setSettings] = useState({
+  const defaultSettings = {
     websiteName: "AppNook",
     tagline: "Apps worth keeping.",
     contactEmail: "",
@@ -1457,8 +1658,11 @@ function AdminPanel() {
     notifyRequests: true,
     notifySubmissions: true,
     notificationEmail: "",
-  });
+  };
+  const [settings, setSettings] = useState(defaultSettings);
   const [settingsNotice, setSettingsNotice] = useState("");
+  const [settingsLoading, setSettingsLoading] = useState(false);
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   const [form, setForm] = useState<AppForm>(emptyForm);
   const [iconMode, setIconMode] = useState<"text" | "image">("text");
@@ -1510,6 +1714,63 @@ function AdminPanel() {
     return data as T;
   }
 
+  async function loadMessages() {
+    setMessagesLoading(true);
+    setMessageError("");
+    try {
+      const result = await apiRequest<AdminMessage[] | { messages?: AdminMessage[] }>(
+        "/api/admin/messages",
+      );
+      const rows = Array.isArray(result) ? result : result.messages || [];
+      setMessages(rows);
+      setSelectedMessage((current) =>
+        current ? rows.find((item) => item.id === current.id) || null : null,
+      );
+    } catch (err) {
+      setMessageError(err instanceof Error ? err.message : "Could not load messages.");
+    } finally {
+      setMessagesLoading(false);
+    }
+  }
+
+  async function updateMessage(id: number, updates: Partial<Pick<AdminMessage, "status" | "is_read" | "admin_notes">>) {
+    setMessageActionLoading(true);
+    setMessageError("");
+    setMessageNotice("");
+    try {
+      await apiRequest(`/api/admin/messages/${id}`, {
+        method: "PUT",
+        body: JSON.stringify(updates),
+      });
+      await loadMessages();
+      if (updates.admin_notes !== undefined) setMessageNotice("Internal note saved.");
+      else if (updates.status) setMessageNotice("Message status updated.");
+      else setMessageNotice("Message updated.");
+    } catch (err) {
+      setMessageError(err instanceof Error ? err.message : "Could not update message.");
+    } finally {
+      setMessageActionLoading(false);
+    }
+  }
+
+  async function deleteMessage(message: AdminMessage) {
+    if (!window.confirm(`Delete this message from ${message.sender_name}? This cannot be undone.`)) return;
+    setMessageActionLoading(true);
+    setMessageError("");
+    setMessageNotice("");
+    try {
+      await apiRequest(`/api/admin/messages/${message.id}`, { method: "DELETE" });
+      setSelectedMessage(null);
+      setMessageNotes("");
+      await loadMessages();
+      setMessageNotice("Message deleted.");
+    } catch (err) {
+      setMessageError(err instanceof Error ? err.message : "Could not delete message.");
+    } finally {
+      setMessageActionLoading(false);
+    }
+  }
+
   async function loadDashboard() {
     setLoading(true);
     setError("");
@@ -1546,6 +1807,53 @@ function AdminPanel() {
       void loadDashboard();
     }
   }, [token]);
+
+  useEffect(() => {
+    if (token && (section === "Dashboard" || section === "Messages")) {
+      void loadMessages();
+    }
+  }, [token, section]);
+
+  async function loadSettings() {
+    setSettingsLoading(true);
+    setSettingsNotice("");
+    try {
+      const saved = await apiRequest<Partial<typeof defaultSettings>>(
+        "/api/admin/settings",
+      );
+      setSettings({ ...defaultSettings, ...saved });
+    } catch (err) {
+      setSettingsNotice(
+        err instanceof Error ? err.message : "Could not load settings.",
+      );
+    } finally {
+      setSettingsLoading(false);
+    }
+  }
+
+  async function saveSettings() {
+    setSettingsSaving(true);
+    setSettingsNotice("");
+    try {
+      await apiRequest("/api/admin/settings", {
+        method: "PUT",
+        body: JSON.stringify(settings),
+      });
+      setSettingsNotice("Settings saved successfully.");
+    } catch (err) {
+      setSettingsNotice(
+        err instanceof Error ? err.message : "Could not save settings.",
+      );
+    } finally {
+      setSettingsSaving(false);
+    }
+  }
+
+  useEffect(() => {
+    if (token && section === "Settings") {
+      void loadSettings();
+    }
+  }, [token, section]);
 
   async function handleLogin(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -1878,6 +2186,19 @@ function AdminPanel() {
   const totalDownloads = adminApps.reduce((sum, app) => sum + app.downloads, 0);
   const publishedCount = adminApps.filter((app) => app.published).length;
 
+  const unreadMessagesCount = messages.filter(
+    (message) => !Boolean(message.is_read)
+  ).length;
+
+  const downloadApps = [...adminApps]
+    .filter((app) => app.downloads > 0)
+    .sort((a, b) => b.downloads - a.downloads);
+  
+  const maxAppDownloads = Math.max(  
+    1,
+    ...downloadApps.map((app) => app.downloads)
+  );
+
   const filteredApps = useMemo(
     () =>
       adminApps.filter((app) => {
@@ -2163,8 +2484,8 @@ function AdminPanel() {
                     },
                     {
                       label: "Unread messages",
-                      value: "—",
-                      note: "Inbox not connected",
+                      value: unreadMessagesCount.toLocaleString(),
+                      note: messagesLoading ? "Updating inbox..." : "Unread in inbox",
                       icon: MessageCircle,
                     },
                   ].map((stat) => {
@@ -2268,64 +2589,192 @@ function AdminPanel() {
                       </div>
                       <button
                         onClick={() => setSection("Messages")}
-                        className="text-sm font-semibold text-[#075cff] hover:text-blue-700"
+                        className="shrink-0 text-sm font-semibold text-[#075cff] hover:text-blue-700"
                       >
                         Open inbox
                       </button>
                     </div>
-                    <div className="flex min-h-[158px] flex-col items-center justify-center px-6 py-8 text-center">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f0f5ff] text-[#075cff]">
-                        <MessageCircle size={18} />
-                      </span>
-                      <p className="mt-3 text-sm font-semibold text-[#34415f]">
-                        Message inbox isn't connected yet
-                      </p>
-                      <p className="mt-1 max-w-[260px] text-xs leading-5 text-[#687797]">
-                        Contact form messages will appear here once an inbox service is connected.
-                      </p>
+                    <div className="divide-y divide-[#edf1f7]">
+                      {messages.slice(0, 4).map((message) => (
+                        <button
+                          key={message.id}
+                          type="button"
+                          onClick={() => {
+                            setSelectedMessage(message);
+                            setMessageNotes(message.admin_notes || "");
+                            setSection("Messages");
+                          }}
+                          className="flex w-full min-w-0 items-center gap-3 px-4 py-4 text-left transition hover:bg-[#f8faff] sm:px-5"
+                        >
+                          <span
+                            className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                              Boolean(message.is_read)
+                                ? "bg-[#cbd5e1]"
+                                : "bg-[#075cff]"
+                            }`}
+                          />
+                          <span className="min-w-0 flex-1">
+                            <span className="flex flex-wrap items-center gap-2">
+                              <span className="truncate text-sm font-semibold text-[#101a3d]">
+                                {message.sender_name}
+                              </span>
+
+                              <span className="rounded-full bg-[#f0f5ff] px-2 py-0.5 text-[10px] font-medium text-[#075cff]">
+                                {message.type === "feedback_support"
+                                  ? "Feedback"
+                                  : message.type === "app_request"
+                                  ? "App request"
+                                  : "Developer submission"}
+                              </span>
+                            </span>
+
+                            <span className="mt-1 block truncate text-xs text-[#687797]">
+                             {message.subject || message.message || message.sender_email} 
+                            </span>
+                          </span>
+
+                          <span className="shrink-0 text-[10px] text-[#8994aa]">
+                            {new Date(message.created_at).toLocaleDateString()}
+                          </span>
+                        </button>
+                      ))}
+                      {messages.length === 0 && (
+                        <div className="flex min-h-[150px] flex-col items-center justify-center px-5 py-8 text-center">
+                          <MessageCircle size={22} className="text-[#075cff]" />
+                          <p className="mt-3 text-sm font-semibold text-[#34415f]">
+                            {messagesLoading ? "Loading messages..." : "No messages yet"}
+                          </p>
+
+                           <p className="mt-1 text-xs text-[#687797]">
+                            New contact form submissions will appear here.
+                           </p>
+                        </div>
+                      )}
                     </div>
+                  
                   </section>
                 </div>
 
                 <section className="mt-6 rounded-[20px] border border-[#e1e8f4] bg-white p-6">
-                  <h2 className="text-[18px] font-semibold text-[#101a3d]">
-                    Downloads, last 30 days
-                  </h2>
-                  <div className="mt-4 flex min-h-[180px] items-center justify-center rounded-2xl border border-dashed border-[#dce5f3] bg-[#f8faff] px-5 py-8 text-center">
-                    <p className="text-sm text-[#687797]">
-                      A chart will appear here when daily download history is available.
-                    </p>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <h2 className="text-[18px] font-semibold text-[#101a3d]">
+                        Downloads by application
+                      </h2>
+                      <p className="mt-1 text-sm text-[#687797]">
+                        All-time download totals for each listed app
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-[#f0f5ff] px-3 py-1 text-xs font-semibold text-[#075cff]">
+                      {totalDownloads.toLocaleString()} total downloads
+                    </span>
                   </div>
+
+                  {downloadApps.length > 0 ? (
+                    <div className="mt-6 space-y-5">
+                      {downloadApps.map((app) => (
+                        <div key={app.id}>
+                          <div className="mb-2 flex items-center justify-between gap-3">
+                            <span className="min-w-0 truncate text-sm font-medium text-[#34415f]">
+                              {app.name}
+                            </span>
+                            <span className="shrink-0 text-sm font-semibold text-[#101a3d]">
+                              {app.downloads.toLocaleString()}
+                            </span>
+                          </div>
+                          <div
+                            className="h-3 overflow-hidden rounded-full bg-[#edf2fb]"
+                            role="progressbar"
+                            aria-label={`${app.name} downloads`}
+                            aria-valuemin={0}
+                            aria-valuemax={maxAppDownloads}
+                            aria-valuenow={app.downloads}
+                          >
+                            <div
+                              className="h-full rounded-full bg-[#075cff] transition-all"
+                              style={{
+                                width: `${(app.downloads / maxAppDownloads) * 100}%`,
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="mt-5 flex min-h-[150px] items-center justify-center rounded-2xl border border-dashed border-[#dce5f3] bg-[#f8faff] px-5 py-8 text-center">
+                      <p className="text-sm text-[#687797]">
+                        Download statistics will appear here after your apps receive downloads.
+                      </p>
+                    </div>
+                  )}
                 </section>
               </>
             )}
 
-            {section === "Messages" && (
-              <>
-                <div className="mb-7">
-                  <p className="text-[13px] font-semibold tracking-[0.08em] text-[#075cff]">
-                    COMMUNICATION
-                  </p>
-                  <h1 className="mt-2 text-[34px] font-bold tracking-[-0.035em] text-[#101a3d]">
-                    Messages
-                  </h1>
-                  <p className="mt-2 text-[15px] text-[#536184]">
-                    Contact form enquiries and app requests.
-                  </p>
-                </div>
-                <div className="flex min-h-[300px] flex-col items-center justify-center rounded-[20px] border border-[#e1e8f4] bg-white px-6 py-12 text-center">
-                  <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#f0f5ff] text-[#075cff]">
-                    <MessageCircle size={24} />
-                  </span>
-                  <h2 className="mt-4 text-lg font-semibold text-[#101a3d]">
-                    Inbox connection required
-                  </h2>
-                  <p className="mt-2 max-w-md text-sm leading-6 text-[#687797]">
-                    The current contact forms are frontend previews and do not store or send messages. This section is ready for the inbox UI when message storage is implemented.
-                  </p>
-                </div>
-              </>
-            )}
+            {section === "Messages" && (() => {
+              const filteredMessages = messages.filter((item) => {
+                const matchesType = messageFilter === "all" || item.type === messageFilter;
+                const matchesStatus = messageStatusFilter === "all" || item.status === messageStatusFilter;
+                const query = messageSearch.trim().toLowerCase();
+                const detailsText = typeof item.details === "string" ? item.details : JSON.stringify(item.details || {});
+                const matchesSearch = !query || [item.sender_name, item.sender_email, item.subject || "", item.message || "", detailsText].join(" ").toLowerCase().includes(query);
+                return matchesType && matchesStatus && matchesSearch;
+              });
+              const typeLabel = (type: AdminMessage["type"]) => type === "feedback_support" ? "Feedback & support" : type === "app_request" ? "App request" : "Developer submission";
+              const statusLabel = (status: AdminMessage["status"]) => status === "in_progress" ? "In progress" : status === "resolved" ? "Resolved" : "New";
+              const unreadCount = messages.filter((item) => !Boolean(item.is_read)).length;
+              const detailObject = selectedMessage?.details
+                ? (typeof selectedMessage.details === "string" ? (() => { try { return JSON.parse(selectedMessage.details as string); } catch { return {}; } })() : selectedMessage.details)
+                : {};
+              return (
+                <>
+                  <div className="mb-7 flex flex-col justify-between gap-4 sm:flex-row sm:items-end">
+                    <div>
+                      <p className="text-[13px] font-semibold tracking-[0.08em] text-[#075cff]">COMMUNICATION</p>
+                      <h1 className="mt-2 text-[34px] font-bold tracking-[-0.035em] text-[#101a3d]">Messages</h1>
+                      <p className="mt-2 text-[15px] text-[#536184]">Review enquiries, app requests and developer submissions.</p>
+                    </div>
+                    <button onClick={() => void loadMessages()} disabled={messagesLoading} className="inline-flex items-center justify-center gap-2 rounded-full border border-[#dce5f3] bg-white px-5 py-2.5 text-sm font-semibold text-[#172344] hover:bg-[#f8faff] disabled:opacity-60">
+                      <RefreshCw size={15} className={messagesLoading ? "animate-spin" : ""} /> Refresh inbox
+                    </button>
+                  </div>
+
+                  {messageError && <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{messageError}</div>}
+                  {messageNotice && <div className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-700">{messageNotice}</div>}
+
+                  <div className="mb-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+                    <div className="rounded-2xl border border-[#e1e8f4] bg-white p-4"><p className="text-xs font-medium text-[#687797]">Total messages</p><p className="mt-1 text-2xl font-bold text-[#101a3d]">{messages.length}</p></div>
+                    <div className="rounded-2xl border border-[#e1e8f4] bg-white p-4"><p className="text-xs font-medium text-[#687797]">Unread</p><p className="mt-1 text-2xl font-bold text-[#075cff]">{unreadCount}</p></div>
+                    <div className="rounded-2xl border border-[#e1e8f4] bg-white p-4"><p className="text-xs font-medium text-[#687797]">Awaiting action</p><p className="mt-1 text-2xl font-bold text-[#101a3d]">{messages.filter((item) => item.status !== "resolved").length}</p></div>
+                  </div>
+
+                  <div className="grid grid-cols-1 gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(320px,0.85fr)]">
+                    <section className="overflow-hidden rounded-[20px] border border-[#e1e8f4] bg-white">
+                      <div className="border-b border-[#e9eef7] p-4">
+                        <div className="relative">
+                          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8a96b0]" />
+                          <input value={messageSearch} onChange={(event) => setMessageSearch(event.target.value)} placeholder="Search name, email or message..." className="w-full rounded-xl border border-[#dfe7f3] bg-[#fbfcff] py-2.5 pl-9 pr-3 text-sm outline-none focus:border-[#075cff]" />
+                        </div>
+                        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                          <select value={messageFilter} onChange={(event) => setMessageFilter(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-[#dfe7f3] bg-white px-3 py-2 text-sm text-[#34415f] outline-none"><option value="all">All message types</option><option value="feedback_support">Feedback & support</option><option value="app_request">App requests</option><option value="developer_submission">Developer submissions</option></select>
+                          <select value={messageStatusFilter} onChange={(event) => setMessageStatusFilter(event.target.value)} className="min-w-0 flex-1 rounded-xl border border-[#dfe7f3] bg-white px-3 py-2 text-sm text-[#34415f] outline-none"><option value="all">All statuses</option><option value="new">New</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option></select>
+                        </div>
+                      </div>
+                      {messagesLoading ? <div className="p-12 text-center text-sm text-[#687797]">Loading inbox...</div> : filteredMessages.length === 0 ? <div className="p-12 text-center"><MessageCircle size={28} className="mx-auto text-[#9aa8c1]" /><p className="mt-3 text-sm font-semibold text-[#34415f]">{messages.length ? "No messages match these filters" : "Your inbox is empty"}</p><p className="mt-1 text-xs text-[#8793aa]">New contact form submissions will appear here.</p></div> : <div className="divide-y divide-[#edf1f7]">{filteredMessages.map((item) => <button key={item.id} onClick={() => { setSelectedMessage(item); setMessageNotes(item.admin_notes || ""); if (!Boolean(item.is_read)) void updateMessage(item.id, { is_read: true }); }} className={`block w-full px-4 py-4 text-left transition hover:bg-[#f8faff] ${selectedMessage?.id === item.id ? "bg-[#f2f6ff]" : "bg-white"}`}><div className="flex items-start justify-between gap-3"><div className="min-w-0"><div className="flex flex-wrap items-center gap-2"><span className={`h-2 w-2 rounded-full ${Boolean(item.is_read) ? "bg-transparent" : "bg-[#075cff]"}`} /><p className="truncate text-sm font-semibold text-[#172344]">{item.sender_name}</p><span className="rounded-full bg-[#f0f5ff] px-2 py-0.5 text-[10px] font-semibold text-[#075cff]">{typeLabel(item.type)}</span></div><p className="mt-1 truncate text-xs text-[#687797]">{item.subject || (item.message || "No message text").slice(0, 90)}</p><p className="mt-1 truncate text-xs text-[#8a96b0]">{item.sender_email}</p></div><div className="shrink-0 text-right"><span className={`rounded-full px-2 py-1 text-[10px] font-semibold ${item.status === "resolved" ? "bg-emerald-50 text-emerald-700" : item.status === "in_progress" ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"}`}>{statusLabel(item.status)}</span><p className="mt-2 text-[10px] text-[#9aa5b8]">{item.created_at ? new Date(item.created_at).toLocaleDateString() : ""}</p></div></div></button>)}</div>}
+                    </section>
+
+                    <section className="rounded-[20px] border border-[#e1e8f4] bg-white p-5">
+                      {!selectedMessage ? <div className="flex min-h-[300px] flex-col items-center justify-center text-center"><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-[#f0f5ff] text-[#075cff]"><Mail size={22} /></span><h2 className="mt-4 text-base font-semibold text-[#172344]">Message details</h2><p className="mt-1 max-w-xs text-xs leading-5 text-[#8793aa]">Select a message from your inbox to read it and manage its status.</p></div> : <>
+                        <div className="flex items-start justify-between gap-3 border-b border-[#edf1f7] pb-4"><div className="min-w-0"><span className="text-[10px] font-semibold uppercase tracking-wider text-[#075cff]">{typeLabel(selectedMessage.type)}</span><h2 className="mt-1 break-words text-lg font-bold text-[#172344]">{selectedMessage.subject || "Message details"}</h2><p className="mt-1 text-xs text-[#8793aa]">{selectedMessage.created_at ? new Date(selectedMessage.created_at).toLocaleString() : ""}</p></div><button onClick={() => void deleteMessage(selectedMessage)} disabled={messageActionLoading} title="Delete message" className="rounded-lg p-2 text-[#9aa5b8] hover:bg-red-50 hover:text-red-600"><Trash2 size={17} /></button></div>
+                        <div className="space-y-3 py-4 text-sm"><div><p className="text-[10px] font-semibold uppercase tracking-wider text-[#8793aa]">From</p><p className="mt-1 font-semibold text-[#172344]">{selectedMessage.sender_name}</p><a className="text-xs text-[#075cff] hover:underline" href={`mailto:${selectedMessage.sender_email}`}>{selectedMessage.sender_email}</a></div>{selectedMessage.message && <div><p className="text-[10px] font-semibold uppercase tracking-wider text-[#8793aa]">Message</p><p className="mt-1 whitespace-pre-wrap break-words leading-6 text-[#34415f]">{selectedMessage.message}</p></div>}{Object.entries((detailObject || {}) as Record<string, unknown>).filter(([key, value]) => value !== null && value !== undefined && value !== "" && !["sender_name", "sender_email", "message", "subject"].includes(key)).map(([key, value]) => <div key={key}><p className="text-[10px] font-semibold uppercase tracking-wider text-[#8793aa]">{key.replace(/_/g, " ")}</p><p className="mt-1 break-words text-sm text-[#34415f]">{typeof value === "object" ? JSON.stringify(value) : String(value)}</p></div>)}</div>
+                        <div className="border-t border-[#edf1f7] pt-4"><label className="text-xs font-semibold text-[#34415f]">Status</label><select value={selectedMessage.status} disabled={messageActionLoading} onChange={(event) => void updateMessage(selectedMessage.id, { status: event.target.value as AdminMessage["status"] })} className="mt-2 w-full rounded-xl border border-[#dfe7f3] bg-white px-3 py-2.5 text-sm outline-none focus:border-[#075cff]"><option value="new">New</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option></select><label className="mt-4 block text-xs font-semibold text-[#34415f]">Internal admin notes</label><textarea value={messageNotes} onChange={(event) => setMessageNotes(event.target.value)} rows={3} placeholder="Add a private note..." className="mt-2 w-full resize-y rounded-xl border border-[#dfe7f3] px-3 py-2.5 text-sm outline-none focus:border-[#075cff]" /><button onClick={() => void updateMessage(selectedMessage.id, { admin_notes: messageNotes })} disabled={messageActionLoading} className="mt-3 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#075cff] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#004fe0] disabled:opacity-60"><Save size={15} /> Save internal note</button></div>
+                      </>}
+                    </section>
+                  </div>
+                </>
+              );
+            })()}
+
 
             {section === "Apps" && (
               <>
@@ -2515,11 +2964,11 @@ function AdminPanel() {
                     onChange={(event) => setCategoryInput(event.target.value)}
                     placeholder="New category name"
                     aria-label="New category name"
-                    className="h-[52px] min-w-0 flex-1 rounded-2xl border border-[#dce4f2] bg-white px-4 text-sm text-[#101a3d] outline-none transition placeholder:text-[#858fa5] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
+                    className="box-border h-[52px] min-h-[52px] w-full min-w-0 rounded-2xl border border-[#dce4f2] bg-white px-4 text-sm text-[#101a3d] outline-none transition placeholder:text-[#858fa5] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"
                   />
                   <button
                     type="submit"
-                    className="inline-flex h-[52px] items-center justify-center gap-2 rounded-2xl bg-[#075cff] px-5 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100"
+                    className="inline-flex h-[52px] min-h-[52px] w-full shrink-0 items-center justify-center gap-2 rounded-2xl bg-[#075cff] px-5 text-sm font-semibold text-white transition hover:bg-blue-700 focus:outline-none focus:ring-4 focus:ring-blue-100 md:w-auto"
                   >
                     <Plus size={17} /> Add
                   </button>
@@ -2608,24 +3057,13 @@ function AdminPanel() {
                 <div className="mb-7">
                   <p className="text-[13px] font-semibold tracking-[0.08em] text-[#075cff]">PREFERENCES</p>
                   <h1 className="mt-2 text-[34px] font-bold leading-tight tracking-[-0.035em] text-[#101a3d]">Settings</h1>
-                  <p className="mt-2 text-[15px] text-[#536184]">Manage your AppNook website details and admin preferences.</p>
+                  <p className="mt-2 text-[15px] text-[#536184]">Manage your admin preferences.</p>
                 </div>
 
                 {settingsNotice && <div role="status" className="mb-5 max-w-4xl rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-800">{settingsNotice}</div>}
 
+                {settingsLoading && <p className="mb-3 text-xs text-[#687797]">Loading saved settings...</p>}
                 <div className="max-w-4xl space-y-5">
-                  <section className="rounded-[20px] border border-[#e1e8f4] bg-white p-5 sm:p-6">
-                    <div className="mb-5 flex items-center gap-3">
-                      <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#edf3ff] text-[#075cff]"><Settings size={19}/></span>
-                      <div><h2 className="text-[15px] font-semibold text-[#101a3d]">Website information</h2><p className="mt-1 text-xs text-[#687797]">Basic identity displayed across AppNook.</p></div>
-                    </div>
-                    <div className="grid gap-4 sm:grid-cols-2">
-                      <label className="block"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Website name</span><input value={settings.websiteName} onChange={e=>setSettings({...settings,websiteName:e.target.value})} className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>
-                      <label className="block"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Tagline</span><input value={settings.tagline} onChange={e=>setSettings({...settings,tagline:e.target.value})} className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>
-                    </div>
-                    <button type="button" onClick={()=>setSettingsNotice("Website information is configured in the UI preview. Permanent saving will be connected after the UI is complete.")} className="mt-4 rounded-full bg-[#075cff] px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-700">Save changes</button>
-                  </section>
-
                   <section className="rounded-[20px] border border-[#e1e8f4] bg-white p-5 sm:p-6">
                     <div className="mb-5 flex items-center gap-3">
                       <span className="flex h-10 w-10 items-center justify-center rounded-[13px] bg-[#eaf8f4] text-[#0f9f75]"><Mail size={19}/></span>
@@ -2636,7 +3074,7 @@ function AdminPanel() {
                       <label className="block"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Phone number (optional)</span><input value={settings.phone} onChange={e=>setSettings({...settings,phone:e.target.value})} placeholder="Phone number" className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none placeholder:text-[#9aa5b8] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>
                       <label className="block sm:col-span-2"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Typical reply time</span><input value={settings.replyTime} onChange={e=>setSettings({...settings,replyTime:e.target.value})} placeholder="e.g. Within 2 days" className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>
                     </div>
-                    <button type="button" onClick={()=>setSettingsNotice("Contact details are configured in the UI preview. Public page connection will come later.")} className="mt-4 rounded-full bg-[#075cff] px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-700">Save changes</button>
+                    <button type="button" onClick={() => void saveSettings()} className="mt-4 rounded-full bg-[#075cff] px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-700" disabled={settingsSaving || settingsLoading}>{settingsSaving ? "Saving..." : "Save changes"}</button>
                   </section>
 
                   <section className="rounded-[20px] border border-[#e1e8f4] bg-white p-5 sm:p-6">
@@ -2650,7 +3088,7 @@ function AdminPanel() {
                       <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={settings.useStartingVisitors} onChange={e=>setSettings({...settings,useStartingVisitors:e.target.checked})} className="mt-0.5 h-4 w-4 accent-[#075cff]"/><span><b className="block text-sm text-[#263252]">Add a starting visitor number</b><small className="text-xs text-[#687797]">Carry over a verified visitor count from another platform.</small></span></label>
                     </div>
                     {settings.useStartingVisitors && <label className="mt-4 block max-w-sm"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Starting visitors</span><input type="number" min="0" value={settings.startingVisitors} onChange={e=>setSettings({...settings,startingVisitors:e.target.value})} className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>}
-                    <button type="button" onClick={()=>setSettingsNotice("Homepage counter preferences are configured in the UI preview. They will be applied after backend integration.")} className="mt-5 rounded-full bg-[#075cff] px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-700">Save changes</button>
+                    <button type="button" onClick={() => void saveSettings()} className="mt-5 rounded-full bg-[#075cff] px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-700" disabled={settingsSaving || settingsLoading}>{settingsSaving ? "Saving..." : "Save changes"}</button>
                   </section>
 
                   <section className="rounded-[20px] border border-[#e1e8f4] bg-white p-5 sm:p-6">
@@ -2664,7 +3102,7 @@ function AdminPanel() {
                       <label className="flex cursor-pointer items-start gap-3"><input type="checkbox" checked={settings.notifySubmissions} onChange={e=>setSettings({...settings,notifySubmissions:e.target.checked})} className="mt-0.5 h-4 w-4 accent-[#075cff]"/><span><b className="block text-sm text-[#263252]">Developer submissions</b><small className="text-xs text-[#687797]">Android apps submitted for review.</small></span></label>
                     </div>
                     <label className="mt-5 block"><span className="mb-1.5 block text-xs font-medium text-[#34415f]">Send notifications to</span><input type="email" value={settings.notificationEmail} onChange={e=>setSettings({...settings,notificationEmail:e.target.value})} placeholder="admin@example.com" className="h-11 w-full rounded-xl border border-[#dce4f2] px-3 text-sm outline-none placeholder:text-[#9aa5b8] focus:border-[#075cff] focus:ring-2 focus:ring-blue-100"/></label>
-                    <button type="button" onClick={()=>setSettingsNotice("Notification preferences are configured in the UI preview. Email notifications will be connected later.")} className="mt-4 rounded-full bg-[#075cff] px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-700">Save changes</button>
+                    <button type="button" onClick={() => void saveSettings()} className="mt-4 rounded-full bg-[#075cff] px-5 py-2.5 text-xs font-semibold text-white hover:bg-blue-700" disabled={settingsSaving || settingsLoading}>{settingsSaving ? "Saving..." : "Save changes"}</button>
                   </section>
 
                   <section className="rounded-[20px] border border-[#e1e8f4] bg-white p-5 sm:p-6">
@@ -2675,7 +3113,7 @@ function AdminPanel() {
                     <div className="mt-4 rounded-xl bg-[#f7f9fd] px-4 py-3 text-xs leading-5 text-[#687797]">Admin password changes are not included yet because they require a secure password-update endpoint. For now, use Logout when you finish managing AppNook.</div>
                   </section>
 
-                  <p className="pb-2 text-xs leading-5 text-[#8793aa]">Settings are currently a UI preview. Values remain in this page only and are not saved permanently. We will connect storage and behaviour after completing the admin UI.</p>
+                  <p className="pb-2 text-xs leading-5 text-[#8793aa]">Website preferences are saved in the AppNook database. Notification preferences are stored for future notification integration; saving them does not send emails yet.</p>
                 </div>
               </>
             )}

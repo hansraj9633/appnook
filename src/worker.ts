@@ -52,9 +52,11 @@ function isValidGitHubApkUrl(value: string): boolean {
 
 function cors(request: Request, env: Env): HeadersInit {
   const origin = request.headers.get("Origin") || "";
-  const allowed = ["http://localhost:5173","http://localhost:5174", env.ALLOWED_ORIGIN].filter(
-    (value): value is string => Boolean(value),
-  );
+  const allowed = [
+    "http://localhost:5173",
+    "http://localhost:5174",
+    env.ALLOWED_ORIGIN,
+  ].filter((value): value is string => Boolean(value));
 
   return {
     "Access-Control-Allow-Origin": allowed.includes(origin) ? origin : "null",
@@ -366,10 +368,482 @@ export default {
         );
       }
 
+      // Public: submit a message
+      if (path === "/api/messages" && method === "POST") {
+        const body: unknown = await request.json().catch(() => null);
+
+        if (typeof body !== "object" || body === null || Array.isArray(body)) {
+          return response(
+            { error: "Invalid request body." },
+            request,
+            env,
+            400,
+          );
+        }
+
+        const input = body as Record<string, unknown>;
+
+        const allowedTypes = [
+          "feedback_support",
+          "app_request",
+          "developer_submission",
+        ];
+
+        const type = input.type;
+        const senderName =
+          typeof input.sender_name === "string" ? input.sender_name.trim() : "";
+        const senderEmail =
+          typeof input.sender_email === "string"
+            ? input.sender_email.trim().toLowerCase()
+            : "";
+        const subject =
+          typeof input.subject === "string" ? input.subject.trim() : "";
+        const message =
+          typeof input.message === "string" ? input.message.trim() : "";
+
+        if (
+          typeof type !== "string" ||
+          !allowedTypes.includes(type) ||
+          !senderName ||
+          senderName.length > 100 ||
+          !senderEmail ||
+          senderEmail.length > 254 ||
+          !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderEmail)
+        ) {
+          return response(
+            { error: "Please provide a valid message type, name and email." },
+            request,
+            env,
+            400,
+          );
+        }
+
+        if (subject.length > 200 || message.length > 5000) {
+          return response(
+            { error: "Subject or message is too long." },
+            request,
+            env,
+            400,
+          );
+        }
+
+        const details = input.details !== undefined ? input.details : {};
+
+        if (
+          typeof details !== "object" ||
+          details === null ||
+          Array.isArray(details)
+        ) {
+          return response(
+            { error: "Invalid additional form details." },
+            request,
+            env,
+            400,
+          );
+        }
+
+        const detailsJson = JSON.stringify(details);
+
+        if (detailsJson.length > 12000) {
+          return response(
+            { error: "Additional form details are too large." },
+            request,
+            env,
+            400,
+          );
+        }
+
+        const result = await env.APPNOOK_DB.prepare(
+          `INSERT INTO messages (
+            type,
+            sender_name,
+            sender_email,
+            subject,
+            message,
+            details_json
+          ) VALUES (?, ?, ?, ?, ?, ?)`,
+        )
+          .bind(
+            type,
+            senderName,
+            senderEmail,
+            subject || null,
+            message || null,
+            detailsJson,
+          )
+          .run();
+
+        return response(
+          {
+            success: true,
+            message: "Your submission has been received.",
+            id: result.meta.last_row_id,
+          },
+          request,
+          env,
+          201,
+        );
+      }
+
+      // Public: expose only the contact fields intended for website visitors.
+      if (path === "/api/public/settings" && method === "GET") {
+        const row = await env.APPNOOK_DB.prepare(
+          "SELECT settings_json FROM app_settings WHERE id = 1",
+        ).first<{ settings_json: string }>();
+
+        let savedSettings: Record<string, unknown> = {};
+        if (row?.settings_json) {
+          try {
+            const parsed: unknown = JSON.parse(row.settings_json);
+            if (
+              typeof parsed === "object" &&
+              parsed !== null &&
+              !Array.isArray(parsed)
+            ) {
+              savedSettings = parsed as Record<string, unknown>;
+            }
+          } catch {
+            return response({ error: "Stored settings are invalid." }, request, env, 500);
+          }
+        }
+
+        return response(
+          {
+            contactEmail: typeof savedSettings.contactEmail === "string" ? savedSettings.contactEmail : "",
+            phone: typeof savedSettings.phone === "string" ? savedSettings.phone : "",
+            replyTime: typeof savedSettings.replyTime === "string" ? savedSettings.replyTime : "Within 24–48 hours",
+            showVisitorCount: savedSettings.showVisitorCount !== false,
+            showDownloadCount: savedSettings.showDownloadCount !== false,
+            useStartingVisitors: savedSettings.useStartingVisitors === true,
+            startingVisitors: typeof savedSettings.startingVisitors === "string" || typeof savedSettings.startingVisitors === "number" ? String(savedSettings.startingVisitors) : "0",
+          },
+          request,
+          env,
+        );
+      }
+
       // All remaining admin routes require authentication.
       if (path.startsWith("/api/admin/")) {
         if (!(await authorized(request, env))) {
           return response({ error: "Unauthorized" }, request, env, 401);
+        }
+
+        // Admin: read persisted website settings
+        if (path === "/api/admin/settings" && method === "GET") {
+          const row = await env.APPNOOK_DB.prepare(
+            "SELECT settings_json FROM app_settings WHERE id = 1",
+          ).first<{ settings_json: string }>();
+
+          const defaults = {
+            websiteName: "AppNook",
+            tagline: "Discover apps worth downloading.",
+            contactEmail: "",
+            phone: "",
+            replyTime: "Within 24–48 hours",
+            showVisitorCount: false,
+            showDownloadCount: true,
+            useStartingVisitors: false,
+            startingVisitors: 0,
+            notifyFeedback: true,
+            notifyRequests: true,
+            notifySubmissions: true,
+            notificationEmail: "",
+          };
+
+          let savedSettings: Record<string, unknown> = {};
+          if (row?.settings_json) {
+            try {
+              const parsed: unknown = JSON.parse(row.settings_json);
+              if (
+                typeof parsed === "object" &&
+                parsed !== null &&
+                !Array.isArray(parsed)
+              ) {
+                savedSettings = parsed as Record<string, unknown>;
+              }
+            } catch {
+              return response(
+                { error: "Stored settings are invalid. Please save settings again." },
+                request,
+                env,
+                500,
+              );
+            }
+          }
+
+          return response({ ...defaults, ...savedSettings }, request, env);
+        }
+
+        // Admin: persist website settings
+        if (path === "/api/admin/settings" && method === "PUT") {
+          const body: unknown = await request.json().catch(() => null);
+
+          if (
+            typeof body !== "object" ||
+            body === null ||
+            Array.isArray(body)
+          ) {
+            return response(
+              { error: "Invalid settings payload." },
+              request,
+              env,
+              400,
+            );
+          }
+
+          const settingsJson = JSON.stringify(body);
+          if (settingsJson.length > 16000) {
+            return response(
+              { error: "Settings payload is too large." },
+              request,
+              env,
+              400,
+            );
+          }
+
+          await env.APPNOOK_DB.prepare(
+            `INSERT INTO app_settings (id, settings_json, updated_at)
+             VALUES (1, ?, CURRENT_TIMESTAMP)
+             ON CONFLICT(id) DO UPDATE SET
+               settings_json = excluded.settings_json,
+               updated_at = CURRENT_TIMESTAMP`,
+          )
+            .bind(settingsJson)
+            .run();
+
+          return response({ success: true }, request, env);
+        }
+
+        // Admin: list messages with optional filters
+        if (path === "/api/admin/messages" && method === "GET") {
+          const type = url.searchParams.get("type");
+          const status = url.searchParams.get("status");
+          const search = url.searchParams.get("search")?.trim();
+          const read = url.searchParams.get("read");
+
+          const conditions: string[] = [];
+          const values: (string | number)[] = [];
+
+          if (
+            type &&
+            ![
+              "feedback_support",
+              "app_request",
+              "developer_submission",
+            ].includes(type)
+          ) {
+            return response(
+              { error: "Invalid message type." },
+              request,
+              env,
+              400,
+            );
+          }
+
+          if (type) {
+            conditions.push("type = ?");
+            values.push(type);
+          }
+
+          if (status && !["new", "in_progress", "resolved"].includes(status)) {
+            return response(
+              { error: "Invalid message status." },
+              request,
+              env,
+              400,
+            );
+          }
+
+          if (status) {
+            conditions.push("status = ?");
+            values.push(status);
+          }
+
+          if (read !== null) {
+            if (read !== "true" && read !== "false") {
+              return response(
+                { error: "Invalid read filter." },
+                request,
+                env,
+                400,
+              );
+            }
+
+            conditions.push("is_read = ?");
+            values.push(read === "true" ? 1 : 0);
+          }
+
+          if (search) {
+            if (search.length > 200) {
+              return response(
+                { error: "Search query is too long." },
+                request,
+                env,
+                400,
+              );
+            }
+
+            conditions.push(
+              "(sender_name LIKE ? OR sender_email LIKE ? OR subject LIKE ? OR message LIKE ?)",
+            );
+
+            const term = `%${search}%`;
+            values.push(term, term, term, term);
+          }
+
+          const whereClause = conditions.length
+            ? `WHERE ${conditions.join(" AND ")}`
+            : "";
+
+          const result = await env.APPNOOK_DB.prepare(
+            `SELECT *
+             FROM messages
+             ${whereClause}
+             ORDER BY created_at DESC, id DESC
+             LIMIT 200`,
+          )
+            .bind(...values)
+            .all();
+
+          return response(result.results, request, env);
+        }
+
+        // Admin: fetch one message
+        const messageMatch = path.match(/^\/api\/admin\/messages\/(\d+)$/);
+
+        if (messageMatch && method === "GET") {
+          const id = Number(messageMatch[1]);
+
+          const message = await env.APPNOOK_DB.prepare(
+            "SELECT * FROM messages WHERE id = ?",
+          )
+            .bind(id)
+            .first();
+
+          if (!message) {
+            return response({ error: "Message not found." }, request, env, 404);
+          }
+
+          return response(message, request, env);
+        }
+
+        // Admin: update message
+        if (messageMatch && method === "PUT") {
+          const id = Number(messageMatch[1]);
+          const body: unknown = await request.json().catch(() => null);
+
+          if (
+            typeof body !== "object" ||
+            body === null ||
+            Array.isArray(body)
+          ) {
+            return response(
+              { error: "Invalid request body." },
+              request,
+              env,
+              400,
+            );
+          }
+
+          const input = body as Record<string, unknown>;
+          const updates: string[] = [];
+          const values: (string | number | null)[] = [];
+
+          if (input.status !== undefined) {
+            if (
+              typeof input.status !== "string" ||
+              !["new", "in_progress", "resolved"].includes(input.status)
+            ) {
+              return response(
+                { error: "Invalid message status." },
+                request,
+                env,
+                400,
+              );
+            }
+
+            updates.push("status = ?");
+            values.push(input.status);
+          }
+
+          if (input.is_read !== undefined) {
+            if (typeof input.is_read !== "boolean") {
+              return response(
+                { error: "is_read must be true or false." },
+                request,
+                env,
+                400,
+              );
+            }
+
+            updates.push("is_read = ?");
+            values.push(input.is_read ? 1 : 0);
+          }
+
+          if (input.admin_notes !== undefined) {
+            if (
+              input.admin_notes !== null &&
+              (typeof input.admin_notes !== "string" ||
+                input.admin_notes.length > 5000)
+            ) {
+              return response(
+                { error: "Invalid admin notes." },
+                request,
+                env,
+                400,
+              );
+            }
+
+            updates.push("admin_notes = ?");
+            values.push(
+              typeof input.admin_notes === "string"
+                ? input.admin_notes.trim() || null
+                : null,
+            );
+          }
+
+          if (updates.length === 0) {
+            return response(
+              { error: "No valid fields provided." },
+              request,
+              env,
+              400,
+            );
+          }
+
+          updates.push("updated_at = CURRENT_TIMESTAMP");
+          values.push(id);
+
+          const result = await env.APPNOOK_DB.prepare(
+            `UPDATE messages
+             SET ${updates.join(", ")}
+             WHERE id = ?`,
+          )
+            .bind(...values)
+            .run();
+
+          if (!result.meta.changes) {
+            return response({ error: "Message not found." }, request, env, 404);
+          }
+
+          return response({ success: true }, request, env);
+        }
+
+        // Admin: delete message
+        if (messageMatch && method === "DELETE") {
+          const id = Number(messageMatch[1]);
+
+          const result = await env.APPNOOK_DB.prepare(
+            "DELETE FROM messages WHERE id = ?",
+          )
+            .bind(id)
+            .run();
+
+          if (!result.meta.changes) {
+            return response({ error: "Message not found." }, request, env, 404);
+          }
+
+          return response({ success: true }, request, env);
         }
 
         // Admin: upload application screenshot
