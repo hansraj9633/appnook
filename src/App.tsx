@@ -3,6 +3,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type FormEvent,
   type ElementType,
@@ -74,6 +75,7 @@ type PublicDataContextType = {
   categories: string[];
   loading: boolean;
   error: string;
+  visitorCount: number | null;
 };
 
 const PublicDataContext = createContext<PublicDataContextType>({
@@ -81,6 +83,7 @@ const PublicDataContext = createContext<PublicDataContextType>({
   categories: [],
   loading: true,
   error: "",
+  visitorCount: null,
 });
 
 function usePublicData() {
@@ -299,7 +302,7 @@ function AppCard({ app }: { app: AppItem }) {
 }
 
 function Home() {
-  const { apps, categories, loading, error } = usePublicData();
+  const { apps, categories, loading, error, visitorCount } = usePublicData();
   const featuredApps = apps.filter((app) => app.featured);
   const featured = featuredApps.length ? featuredApps : [...apps].sort((a, b) => b.downloads - a.downloads);
   const popular = [...apps].sort((a, b) => b.downloads - a.downloads);
@@ -310,7 +313,6 @@ function Home() {
     useStartingVisitors: false,
     startingVisitors: "0",
   });
-
   useEffect(() => {
     let active = true;
     fetch(`${API_BASE}/api/public/settings`)
@@ -414,7 +416,7 @@ function Home() {
           <section className={`mx-auto grid max-w-[760px] grid-cols-1 items-center justify-items-center gap-7 rounded-2xl bg-[#0d173b] px-7 py-7 text-white sm:gap-5 ${homepageSettings.showVisitorCount && homepageSettings.showDownloadCount ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
               {homepageSettings.showVisitorCount && (
                 <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600"><Eye size={19} /></span>
-                  <div><p className="text-2xl font-bold leading-none">{homepageSettings.useStartingVisitors ? (Number(homepageSettings.startingVisitors) || 0).toLocaleString() : "—"}</p><p className="mt-1 text-[10px] text-slate-300">Total visitors</p></div></div>
+                  <div><p className="text-2xl font-bold leading-none">{visitorCount === null ? "—" : visitorCount.toLocaleString()}</p><p className="mt-1 text-[10px] text-slate-300">Total visits</p></div></div>
               )}
               {homepageSettings.showDownloadCount && (
                 <div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-blue-600"><Download size={19} /></span>
@@ -1623,6 +1625,7 @@ function AdminPanel() {
 
   const [adminApps, setAdminApps] = useState<AdminApp[]>([]);
   const [adminCategories, setAdminCategories] = useState<string[]>([]);
+  const [visitorCount, setVisitorCount] = useState<number | null>(null);
   const [messages, setMessages] = useState<AdminMessage[]>([]);
   const [messagesLoading, setMessagesLoading] = useState(false);
   const [messageFilter, setMessageFilter] = useState("all");
@@ -1793,6 +1796,17 @@ function AdminPanel() {
 
       setAdminApps(appsData.map(mapApiApp));
       setAdminCategories(categoriesData.map((item: any) => item.name));
+
+      try {
+        const visitorData = await apiRequest<{ visitorCount: number }>("/api/admin/visitors");
+        setVisitorCount(
+          typeof visitorData.visitorCount === "number"
+            ? visitorData.visitorCount
+            : null,
+        );
+      } catch {
+        setVisitorCount(null);
+      }
     } catch (err) {
       setError(
         err instanceof Error ? err.message : "Could not load dashboard.",
@@ -2478,8 +2492,8 @@ function AdminPanel() {
                     },
                     {
                       label: "Visitors",
-                      value: "—",
-                      note: "Analytics not connected",
+                      value: visitorCount === null ? "—" : visitorCount.toLocaleString(),
+                      note: visitorCount === null ? "Visit count unavailable" : "Total homepage visits",
                       icon: LayoutDashboard,
                     },
                     {
@@ -3433,6 +3447,40 @@ export default function App() {
   const [categories, setCategories] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [visitorCount, setVisitorCount] = useState<number | null>(null);
+  const visitIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    // Do not count visits that start inside the admin panel.
+    if (location.pathname.startsWith("/admin")) return;
+
+    let active = true;
+    if (!visitIdRef.current) {
+      visitIdRef.current = crypto.randomUUID();
+    }
+
+    fetch(`${API_BASE}/api/public/visit`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ visitId: visitIdRef.current }),
+    })
+      .then(async (result) => {
+        if (!result.ok) throw new Error("Unable to record website visit");
+        return result.json() as Promise<{ visitorCount?: number }>;
+      })
+      .then((data) => {
+        if (active && typeof data.visitorCount === "number") {
+          setVisitorCount(data.visitorCount);
+        }
+      })
+      .catch(() => {
+        // Keep the visitor count unavailable if the tracking API is unreachable.
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -3477,7 +3525,7 @@ export default function App() {
   }
 
   return (
-    <PublicDataContext.Provider value={{ apps, categories, loading, error }}>
+    <PublicDataContext.Provider value={{ apps, categories, loading, error, visitorCount }}>
       <div className="flex min-h-screen flex-col bg-white pt-[72px] text-[#101a3d]">
         <Header />
         <Routes>

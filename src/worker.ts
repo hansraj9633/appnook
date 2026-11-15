@@ -485,6 +485,68 @@ export default {
         );
       }
 
+      // Public: count each homepage visit/page load once.
+      // The client sends a fresh UUID for each Home component mount. Repeated
+      // requests from the same mount (e.g. React StrictMode) are ignored.
+      if (path === "/api/public/visit" && method === "POST") {
+        const body: unknown = await request.json().catch(() => null);
+        const visitId =
+          typeof body === "object" &&
+          body !== null &&
+          "visitId" in body &&
+          typeof (body as { visitId?: unknown }).visitId === "string"
+            ? (body as { visitId: string }).visitId
+            : "";
+
+        if (
+          !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(visitId)
+        ) {
+          return response(
+            { error: "A valid visit ID is required." },
+            request,
+            env,
+            400,
+          );
+        }
+
+        await env.APPNOOK_DB.prepare(
+          "INSERT OR IGNORE INTO visitor_visits (visit_id) VALUES (?)",
+        )
+          .bind(visitId)
+          .run();
+
+        const countRow = await env.APPNOOK_DB.prepare(
+          "SELECT COUNT(*) AS total FROM visitor_visits",
+        ).first<{ total: number }>();
+
+        const settingsRow = await env.APPNOOK_DB.prepare(
+          "SELECT settings_json FROM app_settings WHERE id = 1",
+        ).first<{ settings_json: string }>();
+
+        let startingVisitors = 0;
+        if (settingsRow?.settings_json) {
+          try {
+            const saved = JSON.parse(settingsRow.settings_json) as Record<string, unknown>;
+            if (saved.useStartingVisitors === true) {
+              const parsed = Number(saved.startingVisitors ?? 0);
+              if (Number.isFinite(parsed) && parsed > 0) {
+                startingVisitors = Math.floor(parsed);
+              }
+            }
+          } catch {
+            // Ignore malformed optional settings and retain the tracked visit count.
+          }
+        }
+
+        return response(
+          {
+            visitorCount: startingVisitors + Number(countRow?.total || 0),
+          },
+          request,
+          env,
+        );
+      }
+
       // Public: expose only the contact fields intended for website visitors.
       if (path === "/api/public/settings" && method === "GET") {
         const row = await env.APPNOOK_DB.prepare(
@@ -526,6 +588,38 @@ export default {
       if (path.startsWith("/api/admin/")) {
         if (!(await authorized(request, env))) {
           return response({ error: "Unauthorized" }, request, env, 401);
+        }
+
+        // Admin: read the total homepage visit count.
+        if (path === "/api/admin/visitors" && method === "GET") {
+          const countRow = await env.APPNOOK_DB.prepare(
+            "SELECT COUNT(*) AS total FROM visitor_visits",
+          ).first<{ total: number }>();
+
+          const settingsRow = await env.APPNOOK_DB.prepare(
+            "SELECT settings_json FROM app_settings WHERE id = 1",
+          ).first<{ settings_json: string }>();
+
+          let startingVisitors = 0;
+          if (settingsRow?.settings_json) {
+            try {
+              const saved = JSON.parse(settingsRow.settings_json) as Record<string, unknown>;
+              if (saved.useStartingVisitors === true) {
+                const parsed = Number(saved.startingVisitors ?? 0);
+                if (Number.isFinite(parsed) && parsed > 0) {
+                  startingVisitors = Math.floor(parsed);
+                }
+              }
+            } catch {
+              // Ignore malformed optional settings.
+            }
+          }
+
+          return response(
+            { visitorCount: startingVisitors + Number(countRow?.total || 0) },
+            request,
+            env,
+          );
         }
 
         // Admin: read persisted website settings
