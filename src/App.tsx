@@ -164,7 +164,7 @@ function Header() {
         <div className="hidden items-center gap-3 md:flex">
           <Link
             to="/apps"
-            className="rounded-full bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700"
+            className="rounded-full bg-[#b8c2d3] px-5 py-2.5 text-sm font-semibold text-white hover:bg-[#075cff]"
           >
             Explore
           </Link>
@@ -1106,21 +1106,213 @@ function AboutPage() {
   );
 }
 
-function SimplePage({
+
+function LegalPage({
   title,
-  description,
+  lastUpdated,
+  children,
 }: {
   title: string;
-  description: string;
+  lastUpdated: string;
+  children: React.ReactNode;
 }) {
   return (
-    <main className="mx-auto min-h-[55vh] max-w-4xl px-5 py-16">
-      <p className="text-sm font-semibold text-indigo-600">APPNOOK</p>
-      <h1 className="mt-3 text-4xl font-extrabold">{title}</h1>
-      <p className="mt-6 leading-8 text-zinc-600">{description}</p>
+    <main className="min-h-[55vh] bg-[#f5f7fc] px-5 py-12 sm:py-16">
+      <article className="mx-auto max-w-4xl rounded-2xl border border-[#e5eaf3] bg-white px-6 py-8 shadow-sm sm:px-10 sm:py-12">
+        <p className="text-sm font-bold tracking-wide text-[#075cff]">
+          APPNOOK
+        </p>
+
+        <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-[#111b3e] sm:text-4xl">
+          {title}
+        </h1>
+
+        <p className="mt-3 text-sm text-[#8791aa]">
+          Last Updated: {lastUpdated}
+        </p>
+
+        <div className="mt-8 space-y-7 text-sm leading-7 text-[#53617f] sm:text-base">
+          {children}
+        </div>
+      </article>
     </main>
   );
 }
+
+function LegalSection({
+  title,
+  children,
+}: {
+  title: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <section>
+      <h2 className="mb-2 text-lg font-bold text-[#172344]">
+        {title}
+      </h2>
+      <div className="space-y-2">{children}</div>
+    </section>
+  );
+}
+
+function PrivacyPolicyPage() {
+  return (
+    <LegalPage title="Privacy Policy" lastUpdated="18 November 2026">
+      <p>
+        At AppNook, we respect your privacy. Our goal is to provide useful
+        Android applications that improve productivity and fulfil everyday
+        needs, particularly for students and individuals.
+      </p>
+
+      <LegalSection title="1. Information Collection">
+        <p>
+          AppNook does not require visitors to create accounts, register, or
+          provide personal information to browse or download applications.
+          We do not intentionally collect personal data through normal
+          website browsing.
+        </p>
+        <p>
+          If you contact us, submit feedback, or request an application,
+          we may use the name and email address you voluntarily provide
+          solely to respond, share information, and maintain communication
+          with you.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="2. Cookies">
+        <p>
+          AppNook does not use cookies or ask visitors to accept cookies.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="3. Third-Party Services">
+        <p>
+          AppNook does not intentionally use third-party analytics or
+          advertising services to collect visitor information. If such
+          services are introduced in the future, this policy will be
+          updated accordingly.
+        </p>
+        <p>
+          Application download links may lead to external platforms,
+          which have their own privacy policies and practices.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="4. Data Security">
+        <p>
+          We take reasonable measures to protect information voluntarily
+          shared with us. However, no online service can guarantee
+          absolute security.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="5. Policy Updates">
+        <p>
+          This Privacy Policy may be updated if our website or practices
+          change. Any revised version will be published on this page.
+        </p>
+      </LegalSection>
+    </LegalPage>
+  );
+}
+
+function TermsPage() {
+  return (
+    <LegalPage title="Terms & Disclaimer" lastUpdated="18 November 2026">
+      <p>
+        Welcome to AppNook, an independent platform created to provide
+        useful Android applications that improve productivity and fulfil
+        the everyday needs of students and other users.
+      </p>
+
+      <p>
+        By accessing or using AppNook, you agree to the following terms.
+      </p>
+
+      <LegalSection title="1. Free Application Downloads">
+        <p>
+          All applications available for download through AppNook are
+          provided free of charge. No payment or subscription is required
+          to download an APK from our website.
+        </p>
+        <p>
+          Individual applications may contain optional in-app purchases,
+          paid features, or subscriptions. These are separate from AppNook
+          and are subject to the respective application's terms and
+          payment policies.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="2. Application Information">
+        <p>
+          We make reasonable efforts to provide accurate application
+          descriptions, screenshots, version details, and compatibility
+          information. However, features, availability, requirements,
+          and other information may change.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="3. Application Safety and Responsibility">
+        <p>
+          Users are responsible for reviewing an application's details
+          and permissions before installation.
+        </p>
+        <p>
+          Although we aim to provide useful and reliable applications,
+          we cannot guarantee that every application is completely free
+          from errors, security vulnerabilities, or compatibility issues.
+          Please install applications only when you trust their source.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="4. Third-Party Links">
+        <p>
+          Some application downloads may be hosted on external platforms.
+          AppNook does not control these platforms and is not responsible
+          for their availability, policies, or services. Use of external
+          websites is subject to their respective terms and conditions.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="5. Intellectual Property">
+        <p>
+          Application names, logos, trademarks, screenshots, and software
+          remain the property of their respective owners. AppNook does not
+          claim ownership of third-party applications unless explicitly
+          stated.
+        </p>
+        <p>
+          If you believe that content listed on AppNook infringes your
+          rights, please contact us so that we can review your concern.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="6. Limitation of Liability">
+        <p>
+          AppNook is provided on an as-available basis. To the extent
+          permitted by applicable law, we are not responsible for damages,
+          data loss, device issues, or other problems resulting from the
+          installation or use of applications downloaded through the
+          website.
+        </p>
+      </LegalSection>
+
+      <LegalSection title="7. Changes to These Terms">
+        <p>
+          We may update these terms as AppNook develops. Revised terms
+          will be published on this page.
+        </p>
+      </LegalSection>
+
+      <p className="border-t border-[#e5eaf3] pt-5 font-medium text-[#172344]">
+        Thank you for using AppNook. Discover useful apps, explore new
+        possibilities, and make everyday tasks easier.
+      </p>
+    </LegalPage>
+  );
+}
+
 
 function ContactPage() {
   const { categories } = usePublicData();
@@ -1479,7 +1671,7 @@ function ContactPage() {
               </ol>
               <div className="mt-6 rounded-xl bg-[#f3f7ff] p-4">
                 <p className="text-xs font-semibold text-[#263252]">A quick note</p>
-                <p className="mt-1 text-xs leading-5 text-[#71809d]">AppNook lists free applications only. Please submit apps that users can access without payment.</p>
+                <p className="mt-1 text-xs leading-5 text-[#71809d]">AppNook lists applications only. Please submit fully functional apps that users can access securely.</p>
               </div>
             </aside>
           </div>
@@ -3538,21 +3730,11 @@ export default function App() {
           <Route path="/contact" element={<ContactPage />} />
           <Route
             path="/privacy"
-            element={
-              <SimplePage
-                title="Privacy policy"
-                description="AppNook aims to collect only the information necessary to operate the platform. More detailed privacy information will be published before public launch."
-              />
-            }
+            element={<PrivacyPolicyPage />}
           />
           <Route
             path="/terms"
-            element={
-              <SimplePage
-                title="Terms & disclaimer"
-                description="Only download applications you trust. Applications distributed through AppNook are provided by their respective publishers. Users should verify the source and compatibility before installation."
-              />
-            }
+            element={<TermsPage />}
           />
           <Route path="*" element={<NotFound />} />
         </Routes>
